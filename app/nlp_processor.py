@@ -98,11 +98,12 @@ class NLPProcessor:
                 (r"\b(system|bot) (status|health|check)\b", 0.9),
             ],
             
-            # Feedback patterns
+            # Feedback patterns - be more specific to avoid false positives
             "feedback": [
-                (r"\b(i want to|how to|can i) (give|leave|submit) feedback\b", 0.9),
-                (r"\b(bug report|issue|problem|suggestion)\b", 0.8),
-                (r"\bfeedback (for|about|on)\b", 0.85),
+                (r"\b(i want to|how to|can i|i'd like to) (give|leave|submit|provide) feedback\b", 0.95),
+                (r"\bsubmit (a |an )?(bug report|issue|suggestion)\b", 0.9),
+                (r"\bgive you feedback\b", 0.9),
+                (r"\bfeedback for (the |this )?bot\b", 0.9),
             ],
         }
         

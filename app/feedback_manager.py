@@ -90,16 +90,9 @@ class FeedbackManager:
     
     def start_feedback_session(self, user_id: str, channel_id: str, feature: str = None) -> Dict:
         """Start a feedback collection session"""
-        # Check if user has recent feedback session (cooldown of 1 hour)
+        # Cancel any existing session for this user
         if user_id in self.sessions:
-            last_session = datetime.fromisoformat(self.sessions[user_id].get('timestamp', '2020-01-01'))
-            if datetime.utcnow() - last_session < timedelta(hours=1):
-                remaining = 3600 - (datetime.utcnow() - last_session).seconds
-                return {
-                    'success': False,
-                    'message': f"Please wait {remaining // 60} minutes before providing more feedback.",
-                    'cooldown': remaining
-                }
+            del self.sessions[user_id]
         
         # Select a random feature if not specified
         if not feature:
@@ -143,7 +136,7 @@ class FeedbackManager:
             
             return {
                 'success': True,
-                'next_prompt': "What aspects of this feature would be most valuable to you? (or type 'skip' to finish)",
+                'next_prompt': "💭 **Great! Let's dig deeper...**\n\nWhat specific aspects of this feature would be most valuable to you?\n\n*Share any thoughts, ideas, or concerns - or type 'skip' to move on.*",
                 'stage': 'details'
             }
         
@@ -156,7 +149,7 @@ class FeedbackManager:
             
             return {
                 'success': True,
-                'next_prompt': "Would you like to share this feedback anonymously with the bot developer? (yes/no)",
+                'next_prompt': "🤝 **Final step:**\n\nWould you like to share this feedback anonymously with the bot developer?\n\n• **Yes** - Your feedback helps shape the garden (no identifying info is shared)\n• **No** - Your thoughts stay private between us\n\n*Type 'yes' or 'no'*",
                 'stage': 'anonymous'
             }
         

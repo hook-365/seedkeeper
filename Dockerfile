@@ -17,24 +17,17 @@ COPY app/*.py ./
 
 # Copy entrypoint scripts
 COPY app/docker-entrypoint.sh .
-COPY docker-entrypoint-redis.sh .
-RUN chmod +x docker-entrypoint.sh docker-entrypoint-redis.sh
+RUN chmod +x docker-entrypoint.sh
 
 # Create required directories
 RUN mkdir -p /app/views /app/data
-
-# Create non-root user for security
-RUN groupadd -r seedkeeper && useradd -r -g seedkeeper -u 1001 seedkeeper
-
-# Set ownership of app directory to seedkeeper user
-RUN chown -R seedkeeper:seedkeeper /app
 
 # Set environment variables defaults
 ENV PYTHONUNBUFFERED=1
 ENV VIEWS_DIR=/app/views
 
-# Switch to non-root user
-USER seedkeeper
+# Note: Container runs as host user via docker-compose user directive
+# This allows proper file permissions without sudo
 
 # Volumes for persistent data
 VOLUME ["/app/views", "/app/data"]

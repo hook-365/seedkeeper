@@ -14,9 +14,8 @@ from pathlib import Path
 class PromptCompiler:
     """Compiles layered prompts following Lightward's architecture"""
 
-    def __init__(self, data_dir: str = 'data', views_dir: str = 'views'):
+    def __init__(self, data_dir: str = 'data'):
         self.data_dir = Path(data_dir)
-        self.views_dir = Path(views_dir)
 
         # Ensure directories exist
         self.data_dir.mkdir(exist_ok=True)
@@ -25,7 +24,11 @@ class PromptCompiler:
         self.model_voice_file = self.data_dir / 'model_voice.json'
         self.model_voice = self.load_model_voice()
 
-        # Load perspectives
+        # Initialize views manager for perspectives
+        from views_manager import ViewsManager
+        self.views_manager = ViewsManager()
+
+        # Load perspectives from views.txt
         self.core_perspectives = []
         self.perspectives = []
         self.load_perspectives()
@@ -54,33 +57,15 @@ class PromptCompiler:
             json.dump(self.model_voice, f, indent=2)
 
     def load_perspectives(self):
-        """Load perspectives with hierarchy - stores (filepath, content) tuples"""
-        # Check for hierarchical structure
-        core_dir = self.views_dir / '00-core'
+        """Load perspectives from the single views.txt file"""
+        # Parse views.txt if not already done
+        self.views_manager.parse_views()
 
-        if core_dir.exists():
-            # Load core perspectives (essential, always included)
-            for file in core_dir.glob('*.txt'):
-                with open(file, 'r') as f:
-                    self.core_perspectives.append((str(file), f.read()))
+        # Get categorized perspectives
+        self.core_perspectives = self.views_manager.core_perspectives
+        self.perspectives = self.views_manager.regular_perspectives
 
-            # Load other perspectives by category
-            for dir_path in sorted(self.views_dir.glob('*/')):
-                if dir_path.name != '00-core':
-                    for file in dir_path.glob('*.txt'):
-                        with open(file, 'r') as f:
-                            self.perspectives.append((str(file), f.read()))
-        else:
-            # Fallback: load all perspectives as regular
-            if self.views_dir.exists():
-                for file in self.views_dir.glob('*.txt'):
-                    with open(file, 'r') as f:
-                        content = f.read()
-                        # First 10 are "core" (arbitrary for now)
-                        if len(self.core_perspectives) < 10:
-                            self.core_perspectives.append((str(file), content))
-                        else:
-                            self.perspectives.append((str(file), content))
+        print(f"📚 Loaded {len(self.core_perspectives)} core and {len(self.perspectives)} regular perspectives")
 
     def load_team_letters(self) -> Optional[str]:
         """Load any letters from the team to the model"""

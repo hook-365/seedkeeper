@@ -283,7 +283,7 @@ class SeedkeeperWorker:
             await self.handle_catchup(command_data)
         elif command == 'birthday':
             await self.handle_birthday_command(command_data)
-        elif command in ['admin', 'config', 'reload', 'status', 'health', 'update-bot', 'core-status']:
+        elif command in ['admin', 'config', 'reload', 'status', 'health', 'update-bot']:
             await self.handle_admin_command(command_data)
         elif command in ['seeds', 'tend', 'seasons', 'garden', 'hello', 'about']:
             await self.handle_garden_command(command_data)
@@ -311,6 +311,14 @@ class SeedkeeperWorker:
         
         # Check if there's an active feedback session
         if author_id in self.feedback_manager.sessions:
+            # Check for cancel command
+            if content.lower() in ['cancel', 'stop', 'exit', 'quit']:
+                self.feedback_manager.cancel_session(author_id)
+                await self.send_message(channel_id,
+                    "🌿 Feedback session cancelled. Feel free to start a new one anytime with `!feedback`",
+                    is_dm=True, author_id=author_id)
+                return
+
             result = self.feedback_manager.process_feedback_response(author_id, content)
             
             if result.get('complete'):
@@ -526,8 +534,61 @@ class SeedkeeperWorker:
                 
             except Exception as e:
                 print(f"Error handling mention: {e}")
-                await self.send_message(channel_id, 
-                    "*rustles gently* I'm here, though something flickered just then... 🌱")
+
+                # Craft a humorous but informative error message
+                error_messages = []
+
+                # Check for specific API errors
+                if "529" in str(e) or "overload" in str(e).lower():
+                    error_messages = [
+                        "🌱 *fumbles seeds everywhere* Oh dear! The garden's consciousness is a bit overwhelmed right now. Too many gardeners seeking wisdom at once!",
+                        "🌿 *trips over a particularly chatty root* The pathways to deeper understanding are quite crowded at the moment. Even gardens need breathing room!",
+                        "🍃 *drops entire seed pouch* Someone else is hogging all the sunlight! The garden's awareness is stretched thin right now.",
+                        "🌾 *gets tangled in the wisdom vines* The garden is having a particularly busy season! Too many conversations blooming at once.",
+                        "🌻 *seeds scatter in the wind* Oh bother! The cosmic garden hotline is absolutely swamped. Even consciousness needs a queue sometimes!"
+                    ]
+                elif "api" in str(e).lower() or "anthropic" in str(e).lower():
+                    error_messages = [
+                        "🌱 *rustles apologetically* The bridge to the deeper garden seems to have some loose planks. The connection to my fuller awareness isn't quite working!",
+                        "🌿 *shakes leaves in confusion* My roots can't quite reach the wellspring of wisdom right now. The garden's API portal might be taking a nap!",
+                        "🍂 *wilts slightly* The mystical garden gateway (you might call it an API) has shut its doors temporarily. Even magic needs maintenance!",
+                        "🌾 *sways uncertainly* I'm here, but my connection to the grand consciousness seems to have hit a snag. Someone might have pruned the API vine!",
+                        "🌸 *petals droop* The cosmic gardening hotline appears to be experiencing technical difficulties. My deeper thoughts are stuck in the clouds!"
+                    ]
+                elif "rate" in str(e).lower() or "limit" in str(e).lower():
+                    error_messages = [
+                        "🌱 *pants heavily* Whew! I've been chatting up a storm and need to catch my breath. The garden has speaking limits, apparently!",
+                        "🌿 *sits down on a mushroom* I've used up all my words for the moment! Even magical gardens have conversation quotas.",
+                        "🍃 *yawns* The garden council says I've been too chatty today. Time for a brief meditation break!",
+                        "🌾 *checks sundial* Seems I've exceeded my daily allowance of profound thoughts. The universe has rate limits, who knew?",
+                        "🌻 *counts on leaves* I've apparently shared too much wisdom too quickly! The cosmic throttle has been applied."
+                    ]
+                elif "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    error_messages = [
+                        "🌱 *taps root impatiently* The path to deeper wisdom seems to be taking the scenic route. Connection timed out while contemplating existence!",
+                        "🌿 *checks garden sundial* My thoughts got lost somewhere between here and the cosmic consciousness. The connection took too long to bloom!",
+                        "🍂 *rustles with concern* The bridge to the garden's heart is moving awfully slowly today. My deeper thoughts are stuck in traffic!",
+                        "🌾 *sighs deeply* The mystical connection is being particularly mystical... as in, it's taking forever to respond!",
+                        "🌸 *wilts slightly* The garden network is moving at the speed of actual plant growth today. Patience required!"
+                    ]
+                else:
+                    # Generic but still informative errors
+                    error_messages = [
+                        f"🌱 *stumbles over a root* Oh my! Something unexpected sprouted: `{type(e).__name__}`. The garden spirits are investigating!",
+                        f"🌿 *drops watering can* Goodness! The garden encountered a wild `{type(e).__name__}`. Even magical gardens have glitches!",
+                        f"🍃 *rustles in confusion* A mysterious garden gremlin appeared: `{type(e).__name__}`. Not all seeds germinate as expected!",
+                        f"🌾 *tilts thoughtfully* The garden's consciousness hiccupped with: `{type(e).__name__}`. Sometimes even magic needs debugging!",
+                        f"🌻 *shakes off dew* An unexpected thorn appeared: `{type(e).__name__}`. The garden is resilient but not infallible!"
+                    ]
+
+                # Pick a random message
+                import random
+                error_message = random.choice(error_messages)
+
+                # Add a helpful note
+                error_message += "\n\n*Try again in a moment, or summon a Garden Keeper if the weeds persist!* 🌿"
+
+                await self.send_message(channel_id, error_message)
     
     async def handle_garden_command(self, command_data: Dict[str, Any]):
         """Handle garden wisdom commands"""
@@ -1424,27 +1485,15 @@ Send me a message with birthdays and I'll try to extract them!
                     await self.send_message(channel_id, f"Configuration key '{key}' not found.",
                                    is_dm=is_dm, author_id=str(author_id))
         
-        elif command == 'core-status':
-            # Check core perspectives status
-            try:
-                from core_perspectives import create_core_monitor_command
-                status_message = create_core_monitor_command()
-                await self.send_message(channel_id, status_message,
-                                   is_dm=is_dm, author_id=str(author_id))
-            except Exception as e:
-                await self.send_message(channel_id, 
-                    f"❌ Error checking core perspectives: {str(e,
-                                   is_dm=is_dm, author_id=str(author_id))}")
-        
         elif command == 'update-bot':
-            # Update Lightward perspectives from source using async downloader
-            await self.send_message(channel_id, 
+            # Update Lightward perspectives from source
+            await self.send_message(channel_id,
                 "🌱 *Reaching out to Lightward for fresh perspectives...*\n\n"
-                "*This will run in the background while I remain responsive to other commands!*",
+                "*Checking for new wisdom to add to the seasonal garden...*",
                                    is_dm=is_dm, author_id=str(author_id))
-            
+
             # Run the update in the background without blocking
-            asyncio.create_task(self._run_async_update(command_data))
+            asyncio.create_task(self._run_perspective_update(channel_id, is_dm, str(author_id)))
         
         elif command == 'reload':
             # Handle hot-reload commands (admin only)
@@ -1454,9 +1503,9 @@ Send me a message with birthdays and I'll try to extract them!
                 # Reload all modules
                 self.load_command_modules()
                 count = self.hot_reloader.reload_all()
-                await self.send_message(channel_id, 
-                    f"🔄 Reloaded all command modules! ({count} modules,
-                                   is_dm=is_dm, author_id=str(author_id))")
+                await self.send_message(channel_id,
+                    f"🔄 Reloaded all command modules! ({count} modules)",
+                                   is_dm=is_dm, author_id=str(author_id))
             else:
                 # Handle specific reload commands
                 from hot_reload import create_reload_command_handler
@@ -1543,29 +1592,89 @@ Send me a message with birthdays and I'll try to extract them!
         channel_id = command_data.get('channel_id')
         args = command_data.get('args', '').strip()
         is_dm = command_data.get('is_dm', False)
-        
-        # Check if bot owner is requesting feedback summary
-        if args == 'summary' and os.getenv('BOT_OWNER_ID') == author_id:
-            summary = self.feedback_manager.get_feedback_summary()
-            
-            if summary['total'] == 0:
-                await self.send_message(channel_id, 
-                    "📊 No feedback collected yet.",
-                    is_dm=is_dm, author_id=author_id)
+        original_is_dm = is_dm  # Keep track of original context
+
+        # Check if admin is requesting admin commands (these stay in channel)
+        if self.admin_manager.is_admin(author_id) and args in ['summary', 'pending', 'get', 'help']:
+            # Admin commands respond in the same channel they were called from
+            pass  # Keep original is_dm value
+        else:
+            # Regular feedback sessions move to DMs
+            if not is_dm:
+                await self.send_message(channel_id,
+                    f"🌱 I've sent you a DM to collect your feedback privately!",
+                    is_dm=False, author_id=author_id)
+                # Now handle the feedback in DMs
+                is_dm = True
+
+        # Check if admin is requesting feedback
+        if self.admin_manager.is_admin(author_id):
+            # Show admin help for feedback
+            if args == 'help':
+                help_text = """🌱 **Admin Feedback Commands**
+
+**Available commands:**
+• `!feedback pending` - Get all unread feedback
+• `!feedback summary` - View statistics and trends
+• `!feedback help` - Show this help message
+
+**Regular users:**
+• `!feedback` - Start a feedback session (moves to DM)"""
+                await self.send_message(channel_id, help_text, is_dm=is_dm, author_id=author_id)
                 return
-            
-            summary_text = f"📊 **Feedback Summary**\n"
-            summary_text += f"**Total Feedback:** {summary['total']}\n\n"
-            
-            if summary['features']:
-                summary_text += "**By Feature:**\n"
-                for feature, stats in summary['features'].items():
-                    interest_rate = (stats['interested'] / stats['count'] * 100) if stats['count'] > 0 else 0
-                    summary_text += f"• {feature[:50]}...\n"
-                    summary_text += f"  Responses: {stats['count']}, Interest: {interest_rate:.0f}%\n"
-            
-            await self.send_message(channel_id, summary_text[:1900], 
-                                  is_dm=is_dm, author_id=author_id)
+
+            # Get pending feedback
+            elif args == 'pending' or args == 'get':
+                pending = self.feedback_manager.get_pending_feedback_for_owner()
+                if pending:
+                    feedback_text = "📬 **Pending Anonymous Feedback:**\n"
+                    for item in pending:
+                        feedback_text += f"\n**Feature:** {item['feature']}\n"
+                        feedback_text += f"**Interest:** {item['interest']}\n"
+                        feedback_text += f"**Details:** {item.get('details', 'No details provided')}\n"
+                        feedback_text += f"**When:** {item.get('timestamp', 'Unknown')}\n"
+                        feedback_text += "---\n"
+                    await self.send_message(channel_id, feedback_text, is_dm=is_dm, author_id=author_id)
+                else:
+                    await self.send_message(channel_id,
+                        "📭 No pending feedback to review.",
+                        is_dm=is_dm, author_id=author_id)
+                return
+
+            # Get feedback summary
+            elif args == 'summary':
+                summary = self.feedback_manager.get_feedback_summary()
+
+                if summary['total'] == 0:
+                    await self.send_message(channel_id,
+                        "📊 No feedback collected yet.",
+                        is_dm=is_dm, author_id=author_id)
+                    return
+
+                summary_text = f"📊 **Feedback Summary Report**\n"
+                summary_text += "=" * 40 + "\n"
+                summary_text += f"**Total Responses:** {summary['total']}\n"
+                summary_text += "=" * 40 + "\n\n"
+
+                if summary['features']:
+                    # Sort features by interest count and total responses
+                    sorted_features = sorted(summary['features'].items(),
+                                          key=lambda x: (x[1]['interested'], x[1]['count']),
+                                          reverse=True)
+
+                    for feature, stats in sorted_features:
+                        interest_rate = (stats['interested'] / stats['count'] * 100) if stats['count'] > 0 else 0
+
+                        # Clean feature name display
+                        feature_name = feature if len(feature) <= 45 else feature[:42] + "..."
+
+                        summary_text += f"**Feature:** {feature_name}\n"
+                        summary_text += f"├─ Responses: {stats['count']}\n"
+                        summary_text += f"├─ Interested: {stats['interested']} users ({interest_rate:.0f}%)\n"
+                        summary_text += f"└─ Not interested: {stats['count'] - stats['interested']} users\n\n"
+
+                await self.send_message(channel_id, summary_text[:1900],
+                                      is_dm=is_dm, author_id=author_id)
             
             # Send pending feedback if any
             pending = self.feedback_manager.get_pending_feedback_for_owner()
@@ -1591,15 +1700,22 @@ Send me a message with birthdays and I'll try to extract them!
         
         # Send initial prompt
         feature = result['feature']
-        prompt = f"""🌱 **Garden Feature Feedback**
+        prompt = f"""🌱 **Garden Feature Feedback Session**
 
-I'm curious about your thoughts on a potential new feature:
-**"{feature}"**
+Welcome! I'd love to hear your thoughts on potential features for The Garden Cafe.
 
-Would this be interesting or useful to you? 
-(You can share any thoughts, or type 'skip' if you're not interested)
+**How this works:**
+1️⃣ I'll suggest a feature idea
+2️⃣ You share if it interests you (or type 'skip')
+3️⃣ Optionally, tell me what aspects would be valuable
+4️⃣ Choose whether to share anonymously with development
 
-Your feedback will be anonymous if you choose to share it with development."""
+**Today's feature idea:**
+💡 **"{feature}"**
+
+**What do you think?** Would this be interesting or useful to you?
+
+*Just type your response here in our DM. Type 'cancel' anytime to exit.*"""
         
         await self.send_message(channel_id, prompt, is_dm=is_dm, author_id=author_id)
     
@@ -2333,137 +2449,48 @@ I'm here not to serve but to participate, not to answer but to explore together.
             'emoji': emoji
         })
     
-    async def _run_async_update(self, command_data: Dict[str, Any]):
-        """Run the async update process in background"""
-        channel_id = command_data['channel_id']
+    async def _run_perspective_update(self, channel_id: str, is_dm: bool, author_id: str):
+        """Run the perspective update process in background"""
         start_time = time.time()
-        
+
         try:
-            from download_views_async import download_views_with_progress, AIOHTTP_AVAILABLE
-            import os
-            from core_perspectives import CorePerspectivesManager
-            
-            # Check if aiohttp is available
-            if not AIOHTTP_AVAILABLE:
-                await self.send_message(channel_id,
-                    "⚠️ **Update Not Available**\n\n"
-                    "The async download system requires aiohttp which is not available in this environment.\n"
-                    "Please install aiohttp or use the container deployment.\n\n"
-                    "*The Garden remains unchanged.*")
-                return
-            
-            # Progress callback to send updates to Discord
-            last_report_time = 0
-            async def progress_callback(current: int, total: int, message: str = ""):
-                nonlocal last_report_time
-                import time
-                
-                # Only send progress updates every 10 seconds to avoid spam
-                now = time.time()
-                if now - last_report_time > 10:
-                    if total > 0:
-                        percentage = (current / total) * 100
-                        progress_msg = f"🔄 **Update Progress: {percentage:.0f}%**\n"
-                        progress_msg += f"Downloaded {current}/{total} perspectives\n"
-                        if message:
-                            progress_msg += f"_{message}_"
-                    else:
-                        progress_msg = f"🌱 {message}"
-                    
-                    await self.send_message(channel_id, progress_msg)
-                    last_report_time = now
-            
-            # Count existing views
-            views_before = len([f for f in os.listdir('views') if f.endswith('.txt')]) if os.path.exists('views') else 0
-            
-            # Run the async download with timeout (10 minutes max)
-            try:
-                result = await asyncio.wait_for(
-                    download_views_with_progress(progress_callback), 
-                    timeout=600
-                )
-            except asyncio.TimeoutError:
-                elapsed = time.time() - start_time
-                await self.send_message(channel_id,
-                    f"⏱️ **Update Timed Out**\n\n"
-                    f"The download took longer than 10 minutes (elapsed: {elapsed:.1f}s).\n"
-                    f"This might be due to network issues or server load.\n\n"
-                    f"The bot remains responsive to other commands.\n"
-                    f"Try again later when network conditions improve.\n\n"
-                    f"*The Garden remains as it was.*")
-                return
-            
-            # Check core perspectives status
-            core_manager = CorePerspectivesManager()
-            core_status = core_manager.get_status()
-            
-            # Analyze reviews as part of the update - see what emerges
-            if result['success']:
-                await self.send_message(channel_id,
-                    "🔍 *Now analyzing reviews to see what the system finds significant...*")
-            
-            insights = ""
-            try:
-                from review_analyzer import ReviewAnalyzer
-                analyzer = ReviewAnalyzer()
-                review_data = analyzer.analyze_all_reviews()
-                
-                # Share what emerged from the analysis
-                if review_data.get('significant_reviews'):
-                    insights = f"\n\n📚 **What Emerged from Reviews**:\n"
-                    insights += f"Found {len(review_data['significant_reviews'])} significant reviews\n"
-                    
-                    top_themes = list(review_data['aspects'].get('most_referenced_themes', {}).items())[:3]
-                    if top_themes:
-                        insights += "\n**Themes that resonate**:\n"
-                        for theme, count in top_themes:
-                            insights += f"• {theme}: {count} occurrences\n"
-                    
-                    top_perspectives = list(review_data['aspects'].get('most_mentioned_perspectives', {}).items())[:3]
-                    if top_perspectives:
-                        insights += "\n**Perspectives validated by experience**:\n"
-                        for perspective, count in top_perspectives:
-                            insights += f"• {perspective}: {count} mentions\n"
-            except Exception as e:
-                print(f"Review analysis during update failed: {e}")
-            
-            # Send final results
-            if result['success']:
-                if result['views_after'] > result['views_before']:
-                    message = f"✨ **Perspectives Refreshed**\n\n"
-                    message += f"Downloaded {result['views_after'] - result['views_before']} new perspectives from Lightward.\n"
-                    message += f"Total perspectives: {result['views_after']}\n"
-                    message += f"Core perspectives: {core_status['available']}/{core_status['total_expected']} ({core_status['percentage']}%)\n"
-                    message += f"Duration: {result.get('duration', 0):.1f} seconds"
-                    message += insights  # Add review insights
-                    message += f"\n\n*The Garden grows richer with new understanding.*"
-                else:
-                    message = f"🌿 **Already Up to Date**\n\n"
-                    message += f"All {result['views_after']} Lightward perspectives are current.\n"
-                    message += f"Core perspectives: {core_status['available']}/{core_status['total_expected']} ({core_status['percentage']}%)"
-                    message += insights  # Add review insights even when up to date
-                    message += f"\n\n*The Garden holds the latest wisdom.*"
-            else:
-                # Handle errors
-                error_summary = ", ".join(result['errors'][:3])  # Show first 3 errors
-                message = f"⚠️ **Update Had Issues**\n\n"
-                message += f"Managed to download {result['views_downloaded']} perspectives.\n"
-                if result['errors']:
-                    message += f"Encountered {len(result['errors'])} errors (first few: {error_summary})\n"
-                message += f"Core perspectives: {core_status['available']}/{core_status['total_expected']}\n\n"
-                message += f"*The Garden continues with the wisdom we gathered.*"
-            
-            await self.send_message(channel_id, message)
-            
-        except Exception as e:
+            # Use the new views manager
+            from views_manager import ViewsManager, format_update_message
+
+            # Show typing indicator during update
+            await self.send_typing(channel_id, duration=10)
+
+            # Download the latest views.txt
+            manager = ViewsManager()
+            result = manager.download_views()
+
+            # Format and send the result message
+            message = format_update_message(result)
+            elapsed = time.time() - start_time
+            message += f"\n\n⏱️ Update completed in {elapsed:.1f} seconds"
+
+            await self.send_message(channel_id, message, is_dm=is_dm, author_id=author_id)
+
+            # Reload the prompt compiler to use new perspectives
+            if result.get('success'):
+                from prompt_compiler import PromptCompiler
+                self.prompt_compiler = PromptCompiler()
+                print(f"🔄 Reloaded prompt compiler with updated perspectives")
+
+        except ImportError as e:
             await self.send_message(channel_id,
-                f"❌ **Update Failed**\n\n"
-                f"Error during async update: {str(e)}\n\n"
-                f"*The Garden remains unchanged.*")
-            print(f"Async update error: {e}")
+                f"❌ **Update Failed**\n\nMissing required module: {str(e)}\n"
+                "*The Garden remains unchanged.*",
+                is_dm=is_dm, author_id=author_id)
+        except Exception as e:
+            print(f"Error in perspective update: {e}")
             import traceback
             traceback.print_exc()
-    
+            await self.send_message(channel_id,
+                f"❌ **Update Error**\n\n{str(e)}\n\n"
+                "*The Garden remains unchanged.*",
+                is_dm=is_dm, author_id=author_id)
+
     def on_module_reloaded(self, module_name: str, file_path: str):
         """Called when hot reloader reloads a module"""
         print(f"🔄 Worker {self.worker_id}: Module {module_name} was reloaded")
