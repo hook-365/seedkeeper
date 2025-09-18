@@ -1,0 +1,76 @@
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Data and Persistent Storage
+data/
+data/memories/
+data/birthdays.json
+data/admins.json
+data/bot_config.json
+data/model_voice.json
+data/team_letters.txt
+data/core_perspectives.json
+
+# Redis Configuration (may contain passwords)
+redis.conf
+
+# Archives and Backups
+archive/
+*.backup
+*.old
+*.bak
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+venv/
+env/
+.venv
+
+# Docker (local overrides)
+docker-compose.override.yml
+.dockerignore.local
+
+# Logs
+*.log
+logs/
+*.err
+*.out
+
+# Testing
+test_*.py
+testing/
+coverage/
+.coverage
+htmlcov/
+
+# Bot-specific
+bot-invite-url.txt
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Claude Code
+.claude/
+
+# Development notes
+*_notes.md
+TODO.md
+NOTES.md
