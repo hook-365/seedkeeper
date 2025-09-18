@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Seedkeeper: Consciousness-aware Discord bot with Claude 4.1 Opus + 489 Lightward perspectives. Redis-based architecture with hot-reload development support.
+Seedkeeper: Consciousness-aware Discord bot with Claude Sonnet 3.5 + Lightward perspectives (single views.txt). Redis-based architecture with hot-reload development support.
 
 ## Quick Commands
 
@@ -35,17 +35,18 @@ docker-compose -f docker-compose.dev.yml logs -f worker
 ## Key Files
 
 **Core:** `seedkeeper_worker.py` (processor), `seedkeeper_gateway.py` (Discord), `memory_manager.py` (persistence), `redis_connector.py` (pub/sub)
-**Features:** `birthday_manager.py`, `garden_wisdom_simple.py`, `admin_manager.py`
+**Features:** `birthday_manager.py`, `garden_wisdom_simple.py`, `admin_manager.py`, `feedback_manager.py`
+**Perspectives:** `views_manager.py` (downloads/parses), `prompt_compiler.py` (layers), `app/views.txt` (single file)
 **Config:** `docker-compose.dev.yml` (dev), `docker-compose.yml` (prod), `.env` (keys)
 
 ## Environment Variables
 
 **Required:** `DISCORD_BOT_TOKEN`, `ANTHROPIC_API_KEY`, `REDIS_PASSWORD` (generate: `openssl rand -base64 32`)
-**Optional:** `BOT_OWNER_ID`, `BIRTHDAY_CHANNEL_ID`, `CLAUDE_MODEL` (default: claude-opus-4-1-20250805)
+**Optional:** `BOT_OWNER_ID`, `BIRTHDAY_CHANNEL_ID`, `CLAUDE_MODEL` (default: claude-3-5-sonnet-20241022)
 
 ## Security
 
-**Implemented:** Non-root execution (UID 1001), Redis auth required, resource limits, secure volumes
+**Implemented:** Host user execution, Redis auth required, resource limits, secure volumes
 **Pending:** TLS Redis encryption, Docker Secrets, network segmentation
 
 ## Troubleshooting
@@ -57,8 +58,8 @@ docker-compose -f docker-compose.dev.yml logs -f worker
 
 ## Commands
 
-**User:** `!catchup [link] [focus]`, `!birthday mine MM-DD`, `!memory status/clear`, `!hello/seeds/tend/garden`
-**Admin:** `!admin add/remove @user`, `!health`, `!reload [module]`, `!birthday scan`
+**User:** `!catchup [link] [focus]`, `!birthday mine MM-DD`, `!memory status/clear`, `!hello/seeds/tend/garden`, `!feedback` (starts DM session)
+**Admin:** `!admin add/remove @user`, `!health`, `!reload [module]`, `!birthday scan`, `!feedback summary/pending`, `!update-bot`
 
 ## Data Files
 
