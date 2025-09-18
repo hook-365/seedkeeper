@@ -513,15 +513,25 @@ class SeedkeeperWorker:
                     "content": clean_content if clean_content else content
                 })
                 
+                # Regular API call - caching would require beta features
                 response = self.anthropic.messages.create(
                     model=os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
-                    max_tokens=800,
+                    max_tokens=2000,  # Increased for fuller responses
                     temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
                     system=system_prompt,
                     messages=messages_for_claude
                 )
-                
-                reply = response.content[0].text.strip()
+
+                # Debug logging
+                print(f"Claude API response: {response}")
+                print(f"Response content: {response.content if response else 'No response'}")
+
+                # Safely extract reply
+                if response and response.content and len(response.content) > 0:
+                    reply = response.content[0].text.strip()
+                else:
+                    print(f"Empty response from Claude API")
+                    reply = "I heard you, but my thoughts got tangled in the garden vines. Could you try again?"
                 
                 # Save bot's response to memory
                 self.memory_manager.add_memory(

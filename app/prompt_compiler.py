@@ -135,7 +135,7 @@ You are both observer and participant, both learning and sharing.
 
         # Layer 3: Perspectives (ALL perspectives) - FULL TEXT
         if include_perspectives and self.perspectives:
-            # Include ALL perspectives - Sonnet 4 can handle the full context
+            # Include ALL perspectives - Sonnet 3.5 can handle the full context
             perspectives_xml = self.format_perspectives_as_xml(self.perspectives)
             if perspectives_xml:
                 layers.append(f"<perspectives>\n{perspectives_xml}\n</perspectives>")

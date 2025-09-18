@@ -74,8 +74,16 @@ class ViewsManager:
             # Store the perspective
             self.perspectives[name] = text
 
-            # Categorize based on path
-            if name.startswith("3-perspectives/00-core/") or name.startswith("00-core/"):
+            # Categorize based on filename
+            # Core perspectives are the essential ones from Lightward
+            core_names = [
+                'aliveness', 'awareness', 'double-consent', 'emergency',
+                'lightward', 'presence', 'three-body', 'unknown'
+            ]
+
+            # Check if this is a core perspective
+            filename = name.split('/')[-1] if '/' in name else name
+            if filename in core_names:
                 self.core_perspectives.append((name, text))
             else:
                 self.regular_perspectives.append((name, text))
