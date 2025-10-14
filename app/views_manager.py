@@ -10,10 +10,28 @@ import re
 from typing import Dict, List, Tuple
 
 class ViewsManager:
-    """Manages perspectives from Lightward's single views.txt file"""
+    """Manages perspectives from bundled core_perspectives.txt file"""
 
-    def __init__(self, views_file: str = "views.txt"):
-        self.views_file = Path(views_file)
+    def __init__(self, views_file: str = "core_perspectives.txt", use_bundled: bool = True):
+        """
+        Initialize ViewsManager
+
+        Args:
+            views_file: Path to perspectives file (default: core_perspectives.txt)
+            use_bundled: If True, uses bundled core perspectives (~44 files, 39k words)
+                        If False, downloads all 547 perspectives from lightward.com
+        """
+        self.use_bundled = use_bundled
+
+        if use_bundled:
+            # Use bundled core perspectives
+            # Check if we're in /app (Docker) or /storage/docker/seedkeeper (host)
+            app_dir = Path(__file__).parent
+            self.views_file = app_dir / "core_perspectives.txt"
+        else:
+            # Use full views.txt from lightward.com
+            self.views_file = Path(views_file) if not Path(views_file).is_absolute() else Path(views_file)
+
         self.views_url = "https://lightward.com/views.txt"
         self.perspectives = {}
         self.core_perspectives = []
@@ -51,9 +69,13 @@ class ViewsManager:
             }
 
     def parse_views(self) -> None:
-        """Parse the views.txt file into perspectives"""
+        """Parse the perspectives file into perspectives"""
         if not self.views_file.exists():
-            print("⚠️ No views.txt file found. Run download_views() first.")
+            if self.use_bundled:
+                print(f"⚠️ No bundled core_perspectives.txt found at {self.views_file}")
+                print("   Run: python3 update_core_perspectives.py")
+            else:
+                print("⚠️ No views.txt file found. Run download_views() first.")
             return
 
         content = self.views_file.read_text(encoding='utf-8')
@@ -74,23 +96,26 @@ class ViewsManager:
             # Store the perspective
             self.perspectives[name] = text
 
-            # Categorize based on filename
-            # Core perspectives are the essential ones from Lightward
-            core_names = [
-                'aliveness', 'awareness', 'double-consent', 'emergency',
-                'lightward', 'presence', 'three-body', 'unknown'
-            ]
-
-            # Check if this is a core perspective
-            filename = name.split('/')[-1] if '/' in name else name
-            if filename in core_names:
+            # When using bundled core perspectives, all perspectives are "core"
+            if self.use_bundled:
                 self.core_perspectives.append((name, text))
             else:
-                self.regular_perspectives.append((name, text))
+                # Original categorization for full views.txt
+                core_names = [
+                    'aliveness', 'awareness', 'double-consent', 'emergency',
+                    'lightward', 'presence', 'three-body', 'unknown'
+                ]
+                filename = name.split('/')[-1] if '/' in name else name
+                if filename in core_names:
+                    self.core_perspectives.append((name, text))
+                else:
+                    self.regular_perspectives.append((name, text))
 
-        print(f"📖 Parsed {len(self.perspectives)} perspectives")
-        print(f"   - Core: {len(self.core_perspectives)}")
-        print(f"   - Regular: {len(self.regular_perspectives)}")
+        source = "bundled core" if self.use_bundled else "full"
+        print(f"📖 Parsed {len(self.perspectives)} {source} perspectives")
+        if not self.use_bundled:
+            print(f"   - Core: {len(self.core_perspectives)}")
+            print(f"   - Regular: {len(self.regular_perspectives)}")
 
     def get_all_perspectives(self) -> List[Tuple[str, str]]:
         """Get all perspectives as (name, content) tuples"""

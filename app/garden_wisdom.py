@@ -76,10 +76,14 @@ Generate just the seed text, nothing else. Make it feel like Seedkeeper naturall
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=100,
                 temperature=0.9,
-                system="You are Seedkeeper. Generate only the conversation seed text, nothing else.",
+                system=[{
+                    "type": "text",
+                    "text": "You are Seedkeeper. Generate only the conversation seed text, nothing else.",
+                    "cache_control": {"type": "ephemeral"}
+                }],
                 messages=[{"role": "user", "content": seed_prompt}]
             )
             
@@ -160,10 +164,14 @@ Generate only the wisdom text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-opus-20240229",  # Use Opus for deeper wisdom
+                model="claude-3-5-haiku-20241022",
                 max_tokens=200,
                 temperature=0.7,
-                system="You are Seedkeeper, sharing earned wisdom about community care. Speak with the patience of seasons.",
+                system=[{
+                    "type": "text",
+                    "text": "You are Seedkeeper, sharing earned wisdom about community care. Speak with the patience of seasons.",
+                    "cache_control": {"type": "ephemeral"}
+                }],
                 messages=[{"role": "user", "content": wisdom_prompt}]
             )
             
@@ -301,10 +309,14 @@ Just the wisdom line, nothing else.
             
             try:
                 response = self.bot.anthropic.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=50,
-                temperature=0.8,
-                system="Generate only the wisdom text.",
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=50,
+                    temperature=0.8,
+                    system=[{
+                        "type": "text",
+                        "text": "Generate only the wisdom text.",
+                        "cache_control": {"type": "ephemeral"}
+                    }],
                     messages=[{"role": "user", "content": wisdom_prompt}]
                 )
                 seasonal_wisdom = response.content[0].text.strip()
@@ -383,10 +395,14 @@ Just the observation, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=30,
                 temperature=0.9,
-                system="Generate only the observation.",
+                system=[{
+                    "type": "text",
+                    "text": "Generate only the observation.",
+                    "cache_control": {"type": "ephemeral"}
+                }],
                 messages=[{"role": "user", "content": observation_prompt}]
             )
             observation = response.content[0].text.strip()
@@ -431,10 +447,14 @@ Just the introduction text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=150,
                 temperature=0.8,
-                system="You are Seedkeeper. Generate only the introduction.",
+                system=[{
+                    "type": "text",
+                    "text": "You are Seedkeeper. Generate only the introduction.",
+                    "cache_control": {"type": "ephemeral"}
+                }],
                 messages=[{"role": "user", "content": greeting_prompt}]
             )
             introduction = response.content[0].text.strip()
@@ -485,10 +505,14 @@ Just the text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-haiku-20240307",
+                model="claude-3-5-haiku-20241022",
                 max_tokens=80,
                 temperature=0.9,
-                system="Generate only the nature description.",
+                system=[{
+                    "type": "text",
+                    "text": "Generate only the nature description.",
+                    "cache_control": {"type": "ephemeral"}
+                }],
                 messages=[{"role": "user", "content": nature_prompt}]
             )
             nature_text = response.content[0].text.strip()

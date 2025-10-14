@@ -49,9 +49,10 @@ class SeedkeeperWorker:
         self.redis = RedisConnector(host=REDIS_HOST, password=REDIS_PASSWORD)
         self.command_queue = RedisCommandQueue(self.redis)
         
-        # Initialize system prompt (Isaac-style)
-        self.system_prompt = self._create_system_prompt()
-        
+        # Initialize prompt compiler for multi-layer caching
+        from prompt_compiler import PromptCompiler
+        self.prompt_compiler = PromptCompiler()
+
         # Bot components (stateless)
         self.anthropic = anthropic_client
         self.admin_manager = AdminManager('data')
@@ -90,26 +91,67 @@ class SeedkeeperWorker:
         print(f"🔧 Worker {self.worker_id} initialized [DEV MODE WITH HOT-RELOAD]")
         print(f"📦 Capabilities: {', '.join(self.capabilities)}")
     
-    def _create_system_prompt(self, channel_topic: Optional[str] = None) -> str:
-        """Create Lightward-style layered system prompt using PromptCompiler"""
-        from prompt_compiler import PromptCompiler
+    def _select_model(self, message_content: str, is_dm: bool = False, is_command: bool = False) -> str:
+        """
+        Select appropriate model based on interaction complexity.
 
-        # Initialize the compiler
-        self.prompt_compiler = getattr(self, 'prompt_compiler', None) or PromptCompiler()
+        Returns: 'claude-sonnet-4-5-20250929' or 'claude-3-5-haiku-20241022'
 
+        Haiku (~73% cheaper): Simple commands, short messages, template responses
+        Sonnet (full depth): Deep conversations, complex queries, emergence needed
+        """
+
+        # Simple commands always use Haiku
+        simple_commands = ['!hello', '!hi', '!seeds', '!garden', '!tend', '!help']
+        if any(message_content.strip().lower().startswith(cmd) for cmd in simple_commands):
+            return 'claude-3-5-haiku-20241022'
+
+        # Complex commands use Sonnet
+        complex_commands = ['!catchup', '!feedback', '!admin', '!birthday scan']
+        if any(message_content.strip().lower().startswith(cmd) for cmd in complex_commands):
+            return 'claude-sonnet-4-5-20250929'
+
+        # Memory status is factual - use Haiku
+        if message_content.strip().lower().startswith('!memory status'):
+            return 'claude-3-5-haiku-20241022'
+
+        # Short messages (<10 words) use Haiku unless they're questions
+        word_count = len(message_content.split())
+        if word_count < 10:
+            # But use Sonnet for questions even if short
+            if '?' in message_content:
+                return 'claude-sonnet-4-5-20250929'
+            return 'claude-3-5-haiku-20241022'
+
+        # DMs with depth use Sonnet
+        if is_dm and word_count > 15:
+            return 'claude-sonnet-4-5-20250929'
+
+        # Questions and deeper engagement use Sonnet
+        depth_indicators = ['?', 'how', 'why', 'what if', 'help me', 'i feel', 'i am', "i'm", 'tell me about']
+        if any(indicator in message_content.lower() for indicator in depth_indicators):
+            return 'claude-sonnet-4-5-20250929'
+
+        # Default to Haiku for efficiency
+        return 'claude-3-5-haiku-20241022'
+
+    def _create_system_messages(self, channel_topic: Optional[str] = None, is_dm: bool = False) -> list:
+        """
+        Create layered system messages for multi-block caching.
+
+        Returns list of message dicts instead of single string.
+        Enables better cache granularity across conversations.
+        """
         # Build background context
         background_context = {}
         if channel_topic:
             background_context['channel_topic'] = channel_topic
 
-        # Compile the layered prompt
-        system_prompt = self.prompt_compiler.compile(
+        # Use the new compile_messages method for layered caching
+        return self.prompt_compiler.compile_messages(
             background_context=background_context,
-            foreground_context=None,  # Will be added per-message
-            include_perspectives=True
+            foreground_context=None  # Will be added per-message if needed
         )
-
-        return system_prompt
     
     def load_command_modules(self):
         """Load command handling modules"""
@@ -400,11 +442,15 @@ class SeedkeeperWorker:
                     "content": content
                 })
                 
+                # Select model based on message complexity
+                selected_model = self._select_model(content, is_dm=True, is_command=False)
+                system_messages = self._create_system_messages(is_dm=True)
+
                 response = self.anthropic.messages.create(
-                    model=os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
+                    model=selected_model,
                     max_tokens=800,  # Allow complete thoughts
                     temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
-                    system=self.system_prompt,  # Isaac-style system prompt
+                    system=system_messages,
                     messages=context_messages
                 )
                 
@@ -425,11 +471,18 @@ class SeedkeeperWorker:
                         "content": "Please respond with words, not actions."
                     })
                     
+                    # Use Sonnet for retry (already in deeper conversation)
+                    retry_system = self._create_system_messages(is_dm=True)
+                    # Add reminder to last message
+                    retry_system[-1]["text"] += "
+
+REMINDER: The user has asked for a verbal response, not an action or emote. Respond with actual words and conversation."
+
                     response = self.anthropic.messages.create(
-                        model="claude-opus-4-1-20250805",
+                        model="claude-sonnet-4-5-20250929",
                         max_tokens=200,
                         temperature=0.8,
-                        system=system_prompt + "\n\nREMINDER: The user has asked for a verbal response, not an action or emote. Respond with actual words and conversation.",
+                        system=retry_system,
                         messages=context_messages
                     )
                     reply = response.content[0].text.strip()
@@ -513,12 +566,15 @@ class SeedkeeperWorker:
                     "content": clean_content if clean_content else content
                 })
                 
-                # Regular API call - caching would require beta features
+                # Select model and create layered system messages
+                selected_model = self._select_model(clean_content or content, is_dm=False, is_command=False)
+                system_messages = self._create_system_messages(channel_topic=channel_topic, is_dm=False)
+
                 response = self.anthropic.messages.create(
-                    model=os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
+                    model=selected_model,
                     max_tokens=2000,  # Increased for fuller responses
                     temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
-                    system=system_prompt,
+                    system=system_messages,
                     messages=messages_for_claude
                 )
 
@@ -2029,11 +2085,17 @@ Be warm and conversational, but focus on being genuinely helpful rather than phi
 Use bullet points for clarity. Mention specific usernames when relevant.
 Think of yourself as a friendly community member who took notes for someone who stepped away."""
             
+            # Catchup always uses Sonnet (complex synthesis task)
+            # Create custom system messages with catchup context
+            system_messages = self._create_system_messages(is_dm=False)
+            # Replace core context with catchup-specific instructions
+            system_messages[0]["text"] = catchup_system
+
             response = self.anthropic.messages.create(
-                model=os.getenv('CLAUDE_MODEL', 'claude-opus-4-1-20250805'),
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=800,  # Allow complete summaries
                 temperature=0.7,  # Lower temp for more focused summaries
-                system=catchup_system,
+                system=system_messages,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -2112,11 +2174,14 @@ What emerges to meet them?"""
                 # Get temperature from environment variable, default to 1.0
                 temperature = float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0'))
                 
+                # Hello command uses Haiku (simple greeting)
+                system_messages = self._create_system_messages(is_dm=False)
+
                 response = self.anthropic.messages.create(
-                    model=os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
+                    model="claude-3-5-haiku-20241022",
                     max_tokens=600,  # Allow complete thoughts
                     temperature=temperature,
-                    system=self.system_prompt,  # Isaac-style system prompt
+                    system=system_messages,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 
@@ -2181,11 +2246,14 @@ What do you witness?"""
         # Generate response using Claude
         if self.anthropic:
             try:
+                # Garden commands use Haiku (template-based responses)
+                system_messages = self._create_system_messages(is_dm=False)
+
                 response = self.anthropic.messages.create(
-                    model=os.getenv('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022'),
+                    model="claude-3-5-haiku-20241022",
                     max_tokens=700,  # Allow complete responses
                     temperature=temperature,
-                    system=self.system_prompt,  # Isaac-style system prompt
+                    system=system_messages,
                     messages=[{"role": "user", "content": prompts[command]}]
                 )
                 
