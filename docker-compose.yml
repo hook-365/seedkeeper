@@ -32,8 +32,14 @@ services:
       - "homepage.icon=discord.png"
       - "homepage.description=Consciousness-aware Discord bot for The Garden Cafe"
       - "com.centurylinklabs.watchtower.enable=false"
+    networks:
+      - default
+      - ai_network
 
 networks:
   default:
     external: true
     name: seg_iot
+  ai_network:
+    external: true
+    name: ai-services_ai_network

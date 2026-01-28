@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/*.py ./
 COPY app/*.txt ./
 
+# Copy handler modules
+COPY app/handlers/ ./handlers/
+
 # Copy context directory
 COPY app/context/ ./context/
 
