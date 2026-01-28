@@ -91,8 +91,9 @@ class UsageTracker:
         output_tokens: int,
         user_id: Optional[str] = None,
         channel_id: Optional[str] = None,
+        is_local: bool = False,
     ):
-        cost = self.calculate_cost(model, input_tokens, output_tokens)
+        cost = 0.0 if is_local else self.calculate_cost(model, input_tokens, output_tokens)
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
         with self._lock:
