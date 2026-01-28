@@ -76,7 +76,7 @@ Generate just the seed text, nothing else. Make it feel like Seedkeeper naturall
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=100,
                 temperature=0.9,
                 system=[{
@@ -164,7 +164,7 @@ Generate only the wisdom text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=200,
                 temperature=0.7,
                 system=[{
@@ -309,7 +309,7 @@ Just the wisdom line, nothing else.
             
             try:
                 response = self.bot.anthropic.messages.create(
-                    model="claude-3-5-haiku-20241022",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=50,
                     temperature=0.8,
                     system=[{
@@ -395,7 +395,7 @@ Just the observation, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=30,
                 temperature=0.9,
                 system=[{
@@ -447,7 +447,7 @@ Just the introduction text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=150,
                 temperature=0.8,
                 system=[{
@@ -505,7 +505,7 @@ Just the text, nothing else.
         
         try:
             response = self.bot.anthropic.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model="claude-haiku-4-5-20251001",
                 max_tokens=80,
                 temperature=0.9,
                 system=[{

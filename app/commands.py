@@ -225,6 +225,13 @@ COMMANDS = {
         admin_only=True,
         category="Debug"
     ),
+    "cost": CommandInfo(
+        "cost",
+        "View API usage and cost analytics",
+        "!cost [today|daily|monthly|breakdown|users|full]",
+        admin_only=True,
+        category="Administration"
+    ),
     "health": CommandInfo(
         "health",
         "Detailed health check",

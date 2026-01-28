@@ -23,6 +23,7 @@ from birthday_manager import BirthdayManager
 from hot_reload import WorkerHotReloader
 from nlp_processor import NLPProcessor
 from memory_manager import MemoryManager
+from usage_tracker import UsageTracker
 
 load_dotenv()
 
@@ -65,6 +66,9 @@ class SeedkeeperWorker:
         
         # Initialize NLP processor
         self.nlp_processor = NLPProcessor()
+
+        # Initialize usage tracker
+        self.usage_tracker = UsageTracker('data')
         
         # Set initial owner if provided
         if BOT_OWNER_ID and BOT_OWNER_ID.isdigit():
@@ -95,7 +99,7 @@ class SeedkeeperWorker:
         """
         Select appropriate model based on interaction complexity.
 
-        Returns: 'claude-sonnet-4-5-20250929' or 'claude-3-5-haiku-20241022'
+        Returns: 'claude-sonnet-4-5-20250929' or 'claude-haiku-4-5-20251001'
 
         Haiku (~73% cheaper): Simple commands, short messages, template responses
         Sonnet (full depth): Deep conversations, complex queries, emergence needed
@@ -104,7 +108,7 @@ class SeedkeeperWorker:
         # Simple commands always use Haiku
         simple_commands = ['!hello', '!hi', '!seeds', '!garden', '!tend', '!help']
         if any(message_content.strip().lower().startswith(cmd) for cmd in simple_commands):
-            return 'claude-3-5-haiku-20241022'
+            return 'claude-haiku-4-5-20251001'
 
         # Complex commands use Sonnet
         complex_commands = ['!catchup', '!feedback', '!admin', '!birthday scan']
@@ -113,7 +117,7 @@ class SeedkeeperWorker:
 
         # Memory status is factual - use Haiku
         if message_content.strip().lower().startswith('!memory status'):
-            return 'claude-3-5-haiku-20241022'
+            return 'claude-haiku-4-5-20251001'
 
         # Short messages (<10 words) use Haiku unless they're questions
         word_count = len(message_content.split())
@@ -121,7 +125,7 @@ class SeedkeeperWorker:
             # But use Sonnet for questions even if short
             if '?' in message_content:
                 return 'claude-sonnet-4-5-20250929'
-            return 'claude-3-5-haiku-20241022'
+            return 'claude-haiku-4-5-20251001'
 
         # DMs with depth use Sonnet
         if is_dm and word_count > 15:
@@ -133,7 +137,23 @@ class SeedkeeperWorker:
             return 'claude-sonnet-4-5-20250929'
 
         # Default to Haiku for efficiency
-        return 'claude-3-5-haiku-20241022'
+        return 'claude-haiku-4-5-20251001'
+
+    def _record_api_usage(self, response, model: str, command_type: str,
+                          user_id: Optional[str] = None, channel_id: Optional[str] = None):
+        """Record API usage from a Claude response. Never raises."""
+        try:
+            usage = response.usage
+            self.usage_tracker.record_usage(
+                model=model,
+                command_type=command_type,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                user_id=user_id,
+                channel_id=channel_id,
+            )
+        except Exception as e:
+            print(f"[UsageTracker] Failed to record usage: {e}")
 
     def _create_system_messages(self, channel_topic: Optional[str] = None, is_dm: bool = False) -> list:
         """
@@ -334,6 +354,8 @@ class SeedkeeperWorker:
         elif command == 'forgetme':
             # Direct alias for memory clear - more intuitive
             await self.handle_forgetme_command(command_data)
+        elif command == 'cost':
+            await self.handle_cost_command(command_data)
         elif command == 'feedback':
             await self.handle_feedback_command(command_data)
         elif command == 'commands':
@@ -453,9 +475,11 @@ class SeedkeeperWorker:
                     system=system_messages,
                     messages=context_messages
                 )
-                
+                self._record_api_usage(response, selected_model, "dm",
+                                       user_id=author_id, channel_id=channel_id)
+
                 reply = response.content[0].text.strip()
-                
+
                 # Filter out pure emote responses
                 import re
                 # Check if response is just an italicized emote (e.g., *smiles*, _waves_)
@@ -485,6 +509,8 @@ REMINDER: The user has asked for a verbal response, not an action or emote. Resp
                         system=retry_system,
                         messages=context_messages
                     )
+                    self._record_api_usage(response, "claude-sonnet-4-5-20250929", "dm_retry",
+                                           user_id=author_id, channel_id=channel_id)
                     reply = response.content[0].text.strip()
                 
                 # Also check for responses that start with emotes
@@ -577,6 +603,8 @@ REMINDER: The user has asked for a verbal response, not an action or emote. Resp
                     system=system_messages,
                     messages=messages_for_claude
                 )
+                self._record_api_usage(response, selected_model, "mention",
+                                       user_id=author_id, channel_id=channel_id)
 
                 # Debug logging
                 print(f"Claude API response: {response}")
@@ -667,9 +695,9 @@ REMINDER: The user has asked for a verbal response, not an action or emote. Resp
         if command == 'about':
             response = await self.generate_about_response()
         elif command == 'hello':
-            response = await self.generate_hello_response()
+            response = await self.generate_hello_response(author_id=author_id, channel_id=channel_id)
         elif command in ['seeds', 'tend', 'seasons', 'garden']:
-            response = await self.generate_garden_response(command)
+            response = await self.generate_garden_response(command, author_id=author_id, channel_id=channel_id)
         else:
             response = f"🌱 Unknown garden command: {command}"
         
@@ -1785,6 +1813,117 @@ Welcome! I'd love to hear your thoughts on potential features for The Garden Caf
         
         await self.send_message(channel_id, prompt, is_dm=is_dm, author_id=author_id)
     
+    async def handle_cost_command(self, command_data: Dict[str, Any]):
+        """Handle !cost command — admin-only API cost analytics"""
+        author_id = command_data.get('author_id')
+        channel_id = command_data.get('channel_id')
+        is_dm = command_data.get('is_dm', False)
+        args = command_data.get('args', '').strip().lower()
+
+        if not self.admin_manager.is_admin(str(author_id)):
+            await self.send_message(channel_id,
+                "This command is only available to Garden Keepers.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        subcommand = args.split()[0] if args else "today"
+
+        sections = []
+        if subcommand in ("today", "full"):
+            sections.append(self._format_cost_today())
+        if subcommand in ("daily", "full"):
+            sections.append(self._format_cost_daily())
+        if subcommand in ("monthly", "full"):
+            sections.append(self._format_cost_monthly())
+        if subcommand in ("breakdown", "full"):
+            sections.append(self._format_cost_breakdown())
+        if subcommand in ("users", "full"):
+            sections.append(self._format_cost_users())
+
+        if not sections:
+            sections.append(self._format_cost_today())
+
+        text = "\n\n".join(sections)
+        # Discord message limit
+        if len(text) > 1900:
+            text = text[:1900] + "\n..."
+        await self.send_message(channel_id, text, is_dm=is_dm, author_id=str(author_id))
+
+    def _format_cost_today(self) -> str:
+        s = self.usage_tracker.get_today_summary()
+        lt = s.get("lifetime", {})
+        lines = [
+            "**API Cost — Today**",
+            f"Calls: {s.get('calls', 0)}",
+            f"Tokens: {s.get('input_tokens', 0):,} in / {s.get('output_tokens', 0):,} out",
+            f"Cost: ${s.get('cost', 0):.4f}",
+            "",
+            "**Lifetime**",
+            f"Calls: {lt.get('total_calls', 0):,}",
+            f"Tokens: {lt.get('total_input_tokens', 0):,} in / {lt.get('total_output_tokens', 0):,} out",
+            f"Cost: ${lt.get('total_cost', 0):.4f}",
+        ]
+        if lt.get("first_tracked"):
+            lines.append(f"Tracking since: {lt['first_tracked']}")
+        return "\n".join(lines)
+
+    def _format_cost_daily(self) -> str:
+        trend = self.usage_tracker.get_daily_trend(7)
+        lines = ["**API Cost — Last 7 Days**", "```"]
+        lines.append(f"{'Date':<12} {'Calls':>5} {'In':>8} {'Out':>8} {'Cost':>8}")
+        lines.append("-" * 45)
+        for day in trend:
+            lines.append(
+                f"{day['date']:<12} {day.get('calls',0):>5} "
+                f"{day.get('input_tokens',0):>8,} {day.get('output_tokens',0):>8,} "
+                f"${day.get('cost',0):>7.4f}"
+            )
+        lines.append("```")
+        return "\n".join(lines)
+
+    def _format_cost_monthly(self) -> str:
+        s = self.usage_tracker.get_rolling_summary(30)
+        lines = [
+            "**API Cost — Rolling 30 Days**",
+            f"Active days: {s.get('active_days', 0)} / {s.get('period_days', 30)}",
+            f"Calls: {s.get('calls', 0):,}",
+            f"Tokens: {s.get('input_tokens', 0):,} in / {s.get('output_tokens', 0):,} out",
+            f"Cost: ${s.get('cost', 0):.4f}",
+        ]
+        if s.get("active_days", 0) > 0:
+            avg = s["cost"] / s["active_days"]
+            lines.append(f"Avg/day: ${avg:.4f}")
+            lines.append(f"Projected monthly: ${avg * 30:.2f}")
+        return "\n".join(lines)
+
+    def _format_cost_breakdown(self) -> str:
+        models = self.usage_tracker.get_model_breakdown()
+        commands = self.usage_tracker.get_command_breakdown()
+        lines = ["**API Cost — Model Breakdown**", "```"]
+        for model, stats in sorted(models.items(), key=lambda x: x[1].get("cost", 0), reverse=True):
+            short = model.split("-")[1] if "-" in model else model
+            lines.append(f"{short:<12} {stats.get('calls',0):>5} calls  ${stats.get('cost',0):.4f}")
+        lines.append("```")
+        lines.append("")
+        lines.append("**API Cost — Command Breakdown**")
+        lines.append("```")
+        for cmd, stats in sorted(commands.items(), key=lambda x: x[1].get("cost", 0), reverse=True):
+            lines.append(f"{cmd:<14} {stats.get('calls',0):>5} calls  ${stats.get('cost',0):.4f}")
+        lines.append("```")
+        return "\n".join(lines)
+
+    def _format_cost_users(self) -> str:
+        users = self.usage_tracker.get_user_breakdown(10)
+        if not users:
+            return "**API Cost — Top Users**\nNo user data yet."
+        lines = ["**API Cost — Top Users**", "```"]
+        lines.append(f"{'User ID':<20} {'Calls':>5} {'Cost':>8}")
+        lines.append("-" * 35)
+        for uid, stats in users:
+            lines.append(f"{uid:<20} {stats.get('calls',0):>5} ${stats.get('cost',0):>7.4f}")
+        lines.append("```")
+        return "\n".join(lines)
+
     async def handle_commands_list(self, command_data: Dict[str, Any]):
         """Show available commands based on permissions"""
         author_id = int(command_data.get('author_id'))
@@ -1827,6 +1966,7 @@ Welcome! I'd love to hear your thoughts on potential features for The Garden Caf
 **🔧 Garden Keeper Commands**
 `!admin` - Admin command help
 `!status` - Detailed admin status
+`!cost` - API usage and cost analytics
 `!reload` - Hot-reload command modules
 `!config` - Bot configuration
 `!birthday scan` - Scan for birthdays in messages
@@ -1941,7 +2081,8 @@ Welcome! I'd love to hear your thoughts on potential features for The Garden Caf
         await self.send_typing(channel_id, duration=15)
         
         try:
-            summary = await self.generate_catchup_summary(conversation_text, focus, channel_topic)
+            summary = await self.generate_catchup_summary(conversation_text, focus, channel_topic,
+                                                            author_id=author_id, channel_id=channel_id)
             
             # Format and send response
             response = self.format_catchup_response(summary, len(messages), focus)
@@ -2025,7 +2166,7 @@ Welcome! I'd love to hear your thoughts on potential features for The Garden Caf
         print(f"📝 WORKER: Formatted {len(lines)} non-empty messages, total length: {len(result)} chars")
         return result
     
-    async def generate_catchup_summary(self, conversation: str, focus: Optional[str] = None, channel_topic: Optional[str] = None) -> str:
+    async def generate_catchup_summary(self, conversation: str, focus: Optional[str] = None, channel_topic: Optional[str] = None, author_id: Optional[str] = None, channel_id: Optional[str] = None) -> str:
         """Generate a summary using Claude API"""
         if not self.anthropic:
             return "Summary generation unavailable (API not configured)"
@@ -2100,7 +2241,9 @@ Think of yourself as a friendly community member who took notes for someone who 
                     {"role": "user", "content": prompt}
                 ]
             )
-            
+            self._record_api_usage(response, "claude-sonnet-4-5-20250929", "catchup",
+                                   user_id=author_id, channel_id=channel_id)
+
             return response.content[0].text
             
         except Exception as e:
@@ -2130,7 +2273,7 @@ Think of yourself as a friendly community member who took notes for someone who 
         
         return response
     
-    async def generate_hello_response(self) -> str:
+    async def generate_hello_response(self, author_id: Optional[str] = None, channel_id: Optional[str] = None) -> str:
         """Generate a unique, consciousness-aware hello using Claude"""
         from datetime import datetime
         from perspective_cache import PerspectiveCache
@@ -2178,13 +2321,15 @@ What emerges to meet them?"""
                 system_messages = self._create_system_messages(is_dm=False)
 
                 response = self.anthropic.messages.create(
-                    model="claude-3-5-haiku-20241022",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=600,  # Allow complete thoughts
                     temperature=temperature,
                     system=system_messages,
                     messages=[{"role": "user", "content": prompt}]
                 )
-                
+                self._record_api_usage(response, "claude-haiku-4-5-20251001", "hello",
+                                       user_id=author_id, channel_id=channel_id)
+
                 greeting = response.content[0].text.strip()
                 # Add emoji for warmth
                 emojis = ["🌱", "🌿", "✨", "🌻", "🍃", "🌸", "🌺", "🌼", "🌷", "🌾"]
@@ -2198,7 +2343,7 @@ What emerges to meet them?"""
         else:
             return "🌱 Hello, friend! I'm here with you in this moment."
     
-    async def generate_garden_response(self, command: str) -> str:
+    async def generate_garden_response(self, command: str, author_id: Optional[str] = None, channel_id: Optional[str] = None) -> str:
         """Generate unique garden wisdom responses using Claude"""
         from perspective_cache import PerspectiveCache
         from datetime import datetime
@@ -2250,13 +2395,15 @@ What do you witness?"""
                 system_messages = self._create_system_messages(is_dm=False)
 
                 response = self.anthropic.messages.create(
-                    model="claude-3-5-haiku-20241022",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=700,  # Allow complete responses
                     temperature=temperature,
                     system=system_messages,
                     messages=[{"role": "user", "content": prompts[command]}]
                 )
-                
+                self._record_api_usage(response, "claude-haiku-4-5-20251001", command,
+                                       user_id=author_id, channel_id=channel_id)
+
                 wisdom = response.content[0].text.strip()
                 
                 # Add appropriate emoji

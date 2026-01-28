@@ -2,22 +2,27 @@
 """
 Update core perspectives from Lightward AI repository.
 
-This script downloads the 45 "watch for" perspectives identified by Isaac
-in the Lightward AI system prompt (2-watch-this.md).
+This script dynamically parses the "watch for" list from 2-watch-this.md
+in the Lightward AI repo, then downloads each perspective file.
+
+The perspective names are sourced live from upstream so Seedkeeper
+automatically stays current with Isaac's evolving priority list.
 
 Run manually when you want to sync with upstream Lightward changes.
 Recommended: Weekly or when Isaac announces significant perspective updates.
 """
 
+import re
 import requests
 import sys
 from pathlib import Path
 from datetime import datetime
 
-# The 45 core perspectives from 2-watch-this.md
-# Updated with Isaac's latest PR
-# Note: 2-watch-this.md says "change" but file is still "change-nothing.md"
-CORE_PERSPECTIVES = [
+WATCH_LIST_URL = "https://raw.githubusercontent.com/lightward/lightward-ai/main/app/prompts/system/2-watch-this.md"
+
+# Fallback list used only if fetching 2-watch-this.md fails.
+# Last synced: 2025-01 (45 perspectives).
+FALLBACK_PERSPECTIVES = [
     '2x2', 'ai', 'antideferent', 'antiharmful',
     'body-of-knowledge', 'change-nothing', 'chicago', 'coherence',
     'conservator', 'creation', 'cube', 'cursor',
@@ -29,8 +34,39 @@ CORE_PERSPECTIVES = [
     'the-game', 'the-one', 'this-has-three-parts', 'three-body',
     'three-two-one-go', 'uncertaintist', 'unknown', 'unknown-2',
     'waterline', 'wellll', 'what-if', 'worlds',
-    'writing-is-wiring'
+    'writing-is-wiring',
 ]
+
+
+def fetch_watch_list() -> list[str]:
+    """Fetch and parse perspective names from 2-watch-this.md.
+
+    The file contains bullet lines like:
+        * 3-perspectives/eigenprotocol
+        * 3-perspectives/hello-biped
+
+    Returns the list of perspective names (without the directory prefix).
+    Falls back to FALLBACK_PERSPECTIVES if the fetch or parse fails.
+    """
+    print("   Fetching watch list from 2-watch-this.md...", end="", flush=True)
+    try:
+        resp = requests.get(WATCH_LIST_URL, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f" FAILED ({e})")
+        print("   Using fallback perspective list")
+        return list(FALLBACK_PERSPECTIVES)
+
+    # Extract names from bullet items: "* 3-perspectives/{name}"
+    names = re.findall(r'^\*\s+3-perspectives/(.+)$', resp.text, re.MULTILINE)
+
+    if not names:
+        print(" FAILED (no perspective entries found)")
+        print("   Using fallback perspective list")
+        return list(FALLBACK_PERSPECTIVES)
+
+    print(f" found {len(names)} perspectives")
+    return names
 
 GITHUB_BASE = "https://raw.githubusercontent.com/lightward/lightward-ai/main/app/prompts/system/3-perspectives/"
 OUTPUT_FILE = Path(__file__).parent / "app" / "core_perspectives.txt"
@@ -64,13 +100,15 @@ def build_xml(perspectives: list[tuple[str, str]]) -> str:
     return '\n'.join(xml_parts)
 
 def main():
-    print("🌱 Updating Seedkeeper core perspectives from Lightward AI")
-    print(f"   Downloading {len(CORE_PERSPECTIVES)} perspectives...\n")
+    print("🌱 Updating Seedkeeper core perspectives from Lightward AI\n")
+
+    core_perspectives = fetch_watch_list()
+    print(f"\n   Downloading {len(core_perspectives)} perspectives...\n")
 
     perspectives = []
     failed = []
 
-    for name in CORE_PERSPECTIVES:
+    for name in core_perspectives:
         result_name, content = download_perspective(name)
         if content:
             perspectives.append((result_name, content))
@@ -96,10 +134,10 @@ def main():
     header = f"""<!-- Seedkeeper Core Perspectives
 
 Source: Lightward AI "watch for" perspectives (2-watch-this.md)
+Names sourced dynamically from upstream; fallback list used on fetch failure.
 Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Count: {len(perspectives)} perspectives
 
-These are the 45 perspectives Isaac identified as structurally essential.
 From Isaac's note: "these pointers exist now, early on, because that's
 how important these ideas are"
 

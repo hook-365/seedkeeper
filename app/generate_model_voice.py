@@ -38,7 +38,7 @@ def generate_invocation():
 
     try:
         response = client.messages.create(
-            model="claude-3-opus-20240229",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             temperature=1.0,
             messages=[
@@ -68,7 +68,7 @@ def generate_benediction():
 
     try:
         response = client.messages.create(
-            model="claude-3-opus-20240229",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             temperature=1.0,
             messages=[

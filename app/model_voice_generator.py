@@ -46,7 +46,7 @@ This is not about roleplaying but about articulating your approach to meaningful
 
     try:
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             temperature=1.0,
             messages=[{"role": "user", "content": invocation_prompt}]
@@ -67,7 +67,7 @@ Focus on presence, authenticity, and genuine connection."""
 
     try:
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             temperature=1.0,
             messages=[{"role": "user", "content": benediction_prompt}]
