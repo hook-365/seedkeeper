@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
 # Install system dependencies
@@ -14,24 +13,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY app/*.py ./
+COPY app/*.txt ./
 
-# Copy entrypoint scripts
-COPY app/docker-entrypoint.sh .
-RUN chmod +x docker-entrypoint.sh
+# Copy context directory
+COPY app/context/ ./context/
 
 # Create required directories
 RUN mkdir -p /app/views /app/data
 
-# Set environment variables defaults
+# Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV VIEWS_DIR=/app/views
-
-# Note: Container runs as host user via docker-compose user directive
-# This allows proper file permissions without sudo
 
 # Volumes for persistent data
 VOLUME ["/app/views", "/app/data"]
 
-# Default to Redis entrypoint, can be overridden
-ENTRYPOINT ["./docker-entrypoint-redis.sh"]
-CMD ["worker"]
+CMD ["python", "seedkeeper_bot.py"]
