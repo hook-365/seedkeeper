@@ -123,9 +123,9 @@ class InputValidator:
         month = int(match.group(1))
         day = int(match.group(2))
         
-        # Validate the date is real (using a non-leap year)
+        # Validate the date is real (using a leap year to allow Feb 29)
         try:
-            datetime(2023, month, day)
+            datetime(2024, month, day)
             return True, month, day
         except ValueError:
             return False, None, None

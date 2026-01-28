@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import asyncio
 import re
+from persistence import atomic_json_write
 
 class BirthdayManager:
     """Manages birthday tracking and celebrations"""
@@ -45,13 +46,11 @@ class BirthdayManager:
     
     def save_birthdays(self):
         """Save birthdays to JSON file"""
-        with open(self.birthdays_file, 'w') as f:
-            json.dump(self.birthdays, f, indent=2)
-    
+        atomic_json_write(self.birthdays_file, self.birthdays, indent=2)
+
     def save_pending(self):
         """Save pending confirmations"""
-        with open(self.pending_file, 'w') as f:
-            json.dump(self.pending_confirmations, f, indent=2)
+        atomic_json_write(self.pending_file, self.pending_confirmations, indent=2)
     
     def set_birthday(self, user_id: str, month: int, day: int, 
                     added_by: str, method: str = "manual", name: str = None) -> Tuple[bool, str]:
@@ -61,8 +60,8 @@ class BirthdayManager:
         """
         # Validate date
         try:
-            # Use a non-leap year for validation
-            datetime(2023, month, day)
+            # Use a leap year for validation (allows Feb 29)
+            datetime(2024, month, day)
         except ValueError:
             return False, "That doesn't seem to be a valid date. Please use MM-DD format."
         

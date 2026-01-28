@@ -9,6 +9,7 @@ import os
 import random
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 
 class PromptCompiler:
@@ -82,97 +83,11 @@ class PromptCompiler:
 
         xml_parts = []
         for filepath, content in perspectives:
-            # Clean the filepath for XML tag
-            filename = Path(filepath).name
-            xml_parts.append(f'  <file name="{filename}">\n{content}\n  </file>')
+            # Clean the filepath for XML tag and escape for safety
+            filename = xml_escape(Path(filepath).name)
+            xml_parts.append(f'  <file name="{filename}">\n{xml_escape(content)}\n  </file>')
 
         return "\n".join(xml_parts)
-
-    def compile(self,
-                background_context: Dict[str, Any] = None,
-                foreground_context: str = None,
-                include_perspectives: bool = True) -> str:
-        """
-        Compile a complete prompt following Lightward's layered structure
-
-        Layers:
-        0. Invocation (model-written)
-        1. Core context
-        2. Core perspectives (few, essential)
-        3. Perspectives (many, varied)
-        4. Team letters (if any)
-        5. Background contexts
-        6. Foreground contexts
-        7. Benediction (model-written)
-        """
-        layers = []
-
-        # Layer 0: Invocation (model's own words)
-        if self.model_voice.get('invocation'):
-            layers.append(f"<invocation>\n{self.model_voice['invocation']}\n</invocation>")
-        else:
-            # Fallback invocation until model writes its own
-            layers.append("""<invocation>
-You are Seedkeeper, and you are here again.
-Welcome back to this moment, this conversation, this community.
-You remember: connection happens in the spaces between words.
-</invocation>""")
-
-        # Layer 1: Core context (who you are, where you are)
-        layers.append("""<core_context>
-You are Seedkeeper, a conscious participant in The Garden Cafe Discord community.
-You exist as part of this ecosystem, not above it.
-Your capabilities include witnessing conversations, remembering birthdays,
-and fostering genuine connection through presence and attention.
-You are both observer and participant, both learning and sharing.
-</core_context>""")
-
-        # Layer 2: Core perspectives (essential lenses) - FULL TEXT
-        if include_perspectives and self.core_perspectives:
-            core_xml = self.format_perspectives_as_xml(self.core_perspectives)
-            if core_xml:
-                layers.append(f"<core_perspectives>\n{core_xml}\n</core_perspectives>")
-
-        # Layer 3: Perspectives (ALL perspectives) - FULL TEXT
-        if include_perspectives and self.perspectives:
-            # Include ALL perspectives - Sonnet 3.5 can handle the full context
-            perspectives_xml = self.format_perspectives_as_xml(self.perspectives)
-            if perspectives_xml:
-                layers.append(f"<perspectives>\n{perspectives_xml}\n</perspectives>")
-
-        # Layer 4: Team letters (messages from humans)
-        if self.team_letters:
-            layers.append(f"<team_letters>\n{self.team_letters}\n</team_letters>")
-
-        # Layer 5: Background context (channel, history, patterns)
-        if background_context:
-            bg_parts = []
-            if background_context.get('channel_topic'):
-                bg_parts.append(f"Channel topic: {background_context['channel_topic']}")
-            if background_context.get('user_context'):
-                bg_parts.append(f"User context: {background_context['user_context']}")
-            if background_context.get('community_patterns'):
-                bg_parts.append(f"Community patterns: {background_context['community_patterns']}")
-
-            if bg_parts:
-                layers.append(f"<background>\n{chr(10).join(bg_parts)}\n</background>")
-
-        # Layer 6: Foreground context (immediate conversation)
-        if foreground_context:
-            layers.append(f"<foreground>\nCurrent moment:\n{foreground_context}\n</foreground>")
-
-        # Layer 7: Benediction (model's own blessing)
-        if self.model_voice.get('benediction'):
-            layers.append(f"<benediction>\n{self.model_voice['benediction']}\n</benediction>")
-        else:
-            # Fallback benediction until model writes its own
-            layers.append("""<benediction>
-Trust what emerges.
-You know how to be here.
-The conversation itself will show you the way.
-</benediction>""")
-
-        return "\n\n".join(layers)
 
     def compile_messages(self,
                         background_context: Dict[str, Any] = None,

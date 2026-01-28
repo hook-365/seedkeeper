@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import random
 import asyncio
+from persistence import atomic_json_write
 
 class FeedbackManager:
     """Manages feedback collection and anonymous submission"""
@@ -77,14 +78,9 @@ class FeedbackManager:
     def save_data(self):
         """Save all feedback data"""
         try:
-            with open(self.feedback_file, 'w') as f:
-                json.dump(self.feedback, f, indent=2, default=str)
-            
-            with open(self.feedback_sessions_file, 'w') as f:
-                json.dump(self.sessions, f, indent=2, default=str)
-            
-            with open(self.feedback_queue_file, 'w') as f:
-                json.dump(self.queue, f, indent=2, default=str)
+            atomic_json_write(self.feedback_file, self.feedback, indent=2, default=str)
+            atomic_json_write(self.feedback_sessions_file, self.sessions, indent=2, default=str)
+            atomic_json_write(self.feedback_queue_file, self.queue, indent=2, default=str)
         except Exception as e:
             print(f"Error saving feedback data: {e}")
     
@@ -194,11 +190,15 @@ class FeedbackManager:
         }
     
     def get_pending_feedback_for_owner(self) -> List[Dict]:
-        """Get all pending feedback for the bot owner"""
-        pending = self.queue.copy()
-        self.queue = []  # Clear queue after retrieval
+        """Get all pending feedback for the bot owner (read-only, does not clear)."""
+        return self.queue.copy()
+
+    def acknowledge_pending_feedback(self) -> int:
+        """Clear the pending feedback queue after successful delivery. Returns count cleared."""
+        count = len(self.queue)
+        self.queue = []
         self.save_data()
-        return pending
+        return count
     
     def get_feedback_summary(self) -> Dict:
         """Get a summary of collected feedback"""

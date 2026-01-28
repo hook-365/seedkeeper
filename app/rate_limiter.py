@@ -10,6 +10,7 @@ from typing import Dict, Tuple, Optional
 import json
 from pathlib import Path
 from discord.ext import commands
+from persistence import atomic_json_write
 
 class RateLimiter:
     """Manages rate limiting for bot commands"""
@@ -68,8 +69,7 @@ class RateLimiter:
     
     def save_limits(self, limits: Dict):
         """Save rate limits to file"""
-        with open(self.limits_file, 'w') as f:
-            json.dump(limits, f, indent=2)
+        atomic_json_write(self.limits_file, limits, indent=2)
     
     def update_limit(self, key: str, value: int) -> bool:
         """Update a specific rate limit"""

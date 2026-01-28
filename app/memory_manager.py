@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import asyncio
 from dataclasses import dataclass, asdict
 import hashlib
+from persistence import atomic_json_write
 
 @dataclass
 class Memory:
@@ -76,8 +77,7 @@ class MemoryManager:
 
     def save_settings(self):
         """Save memory settings to disk"""
-        with open(self.settings_file, 'w') as f:
-            json.dump(self.settings, f, indent=2)
+        atomic_json_write(self.settings_file, self.settings, indent=2)
 
     def get_user_file(self, user_id: str) -> Path:
         """Get the memory file path for a user"""
@@ -201,8 +201,7 @@ class MemoryManager:
     def save_user_memories(self, user_id: str, memories: List[Dict]):
         """Save user memories to disk"""
         user_file = self.get_user_file(user_id)
-        with open(user_file, 'w') as f:
-            json.dump(memories, f, indent=2)
+        atomic_json_write(user_file, memories, indent=2)
 
     def get_recent_memories(self, user_id: str, limit: int = 10, channel_type: Optional[str] = None,
                            guild_id: Optional[str] = None, channel_id: Optional[str] = None) -> List[Dict]:

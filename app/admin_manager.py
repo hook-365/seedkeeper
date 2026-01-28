@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Set, Optional
 import discord
 from discord.ext import commands
+from persistence import atomic_json_write
 
 class AdminManager:
     """Manages admin users and permissions for the bot"""
@@ -63,14 +64,12 @@ class AdminManager:
     
     def save_admins(self, admins: Set[str]):
         """Save admin list to file"""
-        with open(self.admin_file, 'w') as f:
-            json.dump({'admins': list(admins)}, f, indent=2)
+        atomic_json_write(self.admin_file, {'admins': list(admins)}, indent=2)
         self.admins = admins
-    
+
     def save_config(self):
         """Save configuration to file"""
-        with open(self.config_file, 'w') as f:
-            json.dump(self.config, f, indent=2)
+        atomic_json_write(self.config_file, self.config, indent=2)
     
     def is_admin(self, user_id: str) -> bool:
         """Check if a user is an admin"""
