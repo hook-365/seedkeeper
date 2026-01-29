@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Dict, Any, List, Optional, Tuple
 
-from zodiac import format_sign_display, get_western_zodiac
+from zodiac import format_sign_display, get_western_zodiac, get_chinese_zodiac
 
 
 def fuzzy_match_user(name: str, nickname: Optional[str], members: List[Dict]) -> Tuple[Optional[Dict], float]:
@@ -114,6 +114,9 @@ class BirthdayHandler:
                 pass
 
         display = format_sign_display(month, day, year, name)
+        # Add tip if viewing own signs and year not set
+        if target_id == author_id and not year:
+            display += "\n\n💡 *Add your birth year with `!birthday year YYYY` to see your Chinese zodiac!*"
         await self.bot.send_message(channel_id, display, is_dm=is_dm, author_id=author_id)
 
     async def handle_birthday_command(self, command_data: Dict[str, Any]):
@@ -136,19 +139,25 @@ class BirthdayHandler:
         if not args:
             help_text = """🎂 **Birthday Commands**
 `!birthday mine MM-DD` - Set your birthday
+`!birthday mine MM-DD-YYYY` - Set birthday with year (for Chinese zodiac)
+`!birthday year YYYY` - Add birth year to your existing birthday
 `!birthday list` - Show upcoming birthdays (next 7 days)
 `!birthday list all` - Show all registered birthdays
-`!birthday upcoming [days]` - Show next N days"""
+`!birthday upcoming [days]` - Show next N days
+`!sign` - Show your zodiac signs"""
 
             if self.bot.admin_manager.is_admin(str(author_id)):
                 help_text += "\n\n**Admin Commands:**"
                 help_text += "\n`!birthday set @user MM-DD` - Set birthday by mention"
+                help_text += "\n`!birthday set <user_id> MM-DD` - Set birthday by ID"
                 help_text += "\n`!birthday add username MM-DD` - Set birthday by name"
                 help_text += "\n`!birthday remove [@user]` - Remove a birthday"
                 help_text += "\n`!birthday parse [text]` - Parse birthdays from text"
                 help_text += "\n`!birthday match` - Match parsed birthdays to users"
                 help_text += "\n`!birthday confirm` - Confirm matched birthdays"
                 help_text += "\n`!birthday scan` - Scan channel for birthdays"
+                help_text += "\n`!birthday ask-years` - Post announcement asking for birth years"
+                help_text += "\n`!birthday announce @user` - Manually trigger birthday announcement"
 
             await self.bot.send_message(channel_id, help_text, is_dm=is_dm, author_id=str(author_id))
             return
@@ -157,6 +166,12 @@ class BirthdayHandler:
 
         if subcommand == 'mine' and len(args) >= 2:
             await self._handle_mine(args, author_id, channel_id, is_dm)
+        elif subcommand == 'year' and len(args) >= 2:
+            await self._handle_year(args, author_id, channel_id, is_dm)
+        elif subcommand == 'ask-years':
+            await self._handle_ask_years(author_id, channel_id, is_dm)
+        elif subcommand == 'announce' and len(args) >= 2:
+            await self._handle_announce(args, author_id, channel_id, is_dm)
         elif subcommand == 'remove':
             await self._handle_remove(args, author_id, channel_id, is_dm)
         elif subcommand == 'upcoming':
@@ -182,20 +197,169 @@ class BirthdayHandler:
     async def _handle_mine(self, args, author_id, channel_id, is_dm):
         birthday_str = args[1]
         try:
-            month_str, day_str = birthday_str.split('-')
-            month, day = int(month_str), int(day_str)
+            parts = birthday_str.split('-')
+            if len(parts) == 2:
+                month, day = int(parts[0]), int(parts[1])
+                year = None
+            elif len(parts) == 3:
+                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+            else:
+                raise ValueError("Invalid format")
+
             success, message = self.bot.birthday_manager.set_birthday(
-                str(author_id), month, day, str(author_id), method="manual"
+                str(author_id), month, day, str(author_id), method="manual", year=year
             )
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
-                await self.bot.send_message(channel_id,
-                    f"🎂 Birthday set for {formatted}!", is_dm=is_dm, author_id=str(author_id))
+                if year:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday set for {formatted}, {year}!", is_dm=is_dm, author_id=str(author_id))
+                else:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday set for {formatted}!", is_dm=is_dm, author_id=str(author_id))
             else:
                 await self.bot.send_message(channel_id, f"❌ {message}", is_dm=is_dm, author_id=str(author_id))
         except ValueError:
             await self.bot.send_message(channel_id,
-                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)", is_dm=is_dm, author_id=str(author_id))
+                "❌ Please use MM-DD or MM-DD-YYYY format (e.g., 03-15 or 03-15-1990)", is_dm=is_dm, author_id=str(author_id))
+
+    async def _handle_year(self, args, author_id, channel_id, is_dm):
+        """Handle !birthday year YYYY - add birth year to existing birthday."""
+        try:
+            year = int(args[1])
+            success, message = self.bot.birthday_manager.set_year(str(author_id), year)
+            if success:
+                from zodiac import get_chinese_zodiac
+                chinese = get_chinese_zodiac(year)
+                await self.bot.send_message(channel_id,
+                    f"🎂 Birth year set to {year}! You're a {chinese['emoji']} {chinese['animal']}!",
+                    is_dm=is_dm, author_id=str(author_id))
+            else:
+                await self.bot.send_message(channel_id, f"❌ {message}", is_dm=is_dm, author_id=str(author_id))
+        except ValueError:
+            await self.bot.send_message(channel_id,
+                "❌ Please provide a valid year (e.g., `!birthday year 1990`)",
+                is_dm=is_dm, author_id=str(author_id))
+
+    async def _handle_ask_years(self, author_id, channel_id, is_dm):
+        """Handle !birthday ask-years - post announcement asking users to share birthday info."""
+        if not self.bot.admin_manager.is_admin(str(author_id)):
+            await self.bot.send_message(channel_id,
+                "🚫 Only Garden Keepers can use this command.", is_dm=is_dm, author_id=str(author_id))
+            return
+
+        # Build current birthday status
+        all_birthdays = self.bot.birthday_manager.get_all_birthdays()
+
+        has_year = []
+        no_year = []
+
+        for user_id, data in all_birthdays.items():
+            month, day = data['month'], data['day']
+            western = get_western_zodiac(month, day)
+            formatted_date = self.bot.birthday_manager.format_birthday_date(month, day)
+
+            if data.get('year'):
+                chinese = get_chinese_zodiac(data['year'])
+                has_year.append(f"<@{user_id}> - {formatted_date} {western['symbol']}{chinese['emoji']}")
+            else:
+                no_year.append(f"<@{user_id}> - {formatted_date} {western['symbol']}")
+
+        # Build the announcement
+        announcement = "@everyone\n\n"
+        announcement += "🎂 **Birthday & Zodiac Update!** 🎂\n\n"
+
+        announcement += "We're tracking birthdays so we can celebrate together! "
+        announcement += "Here's what we know so far:\n\n"
+
+        if has_year or no_year:
+            if has_year:
+                announcement += "**✨ Complete profiles (with Chinese zodiac):**\n"
+                for entry in has_year:
+                    announcement += f"• {entry}\n"
+                announcement += "\n"
+
+            if no_year:
+                announcement += "**📅 Birthdays tracked (no birth year yet):**\n"
+                for entry in no_year:
+                    announcement += f"• {entry}\n"
+                announcement += "\n"
+        else:
+            announcement += "*No birthdays registered yet!*\n\n"
+
+        announcement += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        announcement += "**📝 How to participate:**\n\n"
+
+        announcement += "**Don't see your name?** Add your birthday:\n"
+        announcement += "`!birthday mine MM-DD` (e.g., `!birthday mine 06-15`)\n"
+        announcement += "`!birthday mine MM-DD-YYYY` to include your birth year\n\n"
+
+        announcement += "**Already listed but want to add your year?**\n"
+        announcement += "`!birthday year YYYY` (e.g., `!birthday year 1990`)\n\n"
+
+        announcement += "**Check your zodiac signs anytime:** `!sign`\n\n"
+
+        announcement += "*Birth year is optional and only used for Chinese zodiac display!* 🐉"
+
+        await self.bot.send_message(channel_id, announcement, is_dm=is_dm, author_id=str(author_id))
+
+    async def _handle_announce(self, args, author_id, channel_id, is_dm):
+        """Handle !birthday announce @user - manually trigger a birthday announcement (admin only)."""
+        if not self.bot.admin_manager.is_admin(str(author_id)):
+            await self.bot.send_message(channel_id,
+                "🚫 Only Garden Keepers can use this command.", is_dm=is_dm, author_id=str(author_id))
+            return
+
+        # Parse user mention or ID
+        user_arg = args[1]
+        user_match = re.match(r'<@!?(\d+)>', user_arg)
+        if user_match:
+            target_user_id = user_match.group(1)
+        elif re.match(r'^\d{17,20}$', user_arg):
+            target_user_id = user_arg
+        else:
+            await self.bot.send_message(channel_id,
+                "❌ Please mention a user: `!birthday announce @user`",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        # Check if user has a birthday registered
+        birthday_data = self.bot.birthday_manager.birthdays.get(target_user_id)
+        if not birthday_data:
+            await self.bot.send_message(channel_id,
+                "❌ That user doesn't have a birthday registered.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        # Get birthday channel
+        birthday_channel_id = os.getenv('BIRTHDAY_CHANNEL_ID')
+        if not birthday_channel_id:
+            await self.bot.send_message(channel_id,
+                "❌ BIRTHDAY_CHANNEL_ID not configured in environment.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        birthday_channel = self.bot.get_channel(int(birthday_channel_id))
+        if not birthday_channel:
+            await self.bot.send_message(channel_id,
+                f"❌ Could not find birthday channel (ID: {birthday_channel_id}).",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        await self.bot.send_message(channel_id,
+            "🎂 Generating birthday announcement...", is_dm=is_dm, author_id=str(author_id))
+
+        # Trigger the announcement
+        try:
+            await self.bot._announce_birthday(birthday_channel, target_user_id)
+            await self.bot.send_message(channel_id,
+                f"✅ Birthday announcement posted to <#{birthday_channel_id}>!",
+                is_dm=is_dm, author_id=str(author_id))
+        except Exception as e:
+            await self.bot.send_message(channel_id,
+                f"❌ Error posting announcement: {e}",
+                is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_remove(self, args, author_id, channel_id, is_dm):
         if len(args) >= 2:
@@ -280,8 +444,16 @@ class BirthdayHandler:
 
         members = await self.bot._get_guild_members(guild_id) if guild_id else []
         if not members:
-            await self.bot.send_message(channel_id,
-                "Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
+            error_msg = (
+                "**Could not fetch server members.**\n\n"
+                "To fix this:\n"
+                "1. Go to Discord Developer Portal > Your App > Bot\n"
+                "2. Enable **Server Members Intent** under Privileged Gateway Intents\n"
+                "3. Restart the bot\n\n"
+                "**Workaround:** Use `!birthday set <user_id> MM-DD` to add birthdays by ID.\n"
+                "Example: `!birthday set 764630517197963274 01-07`"
+            )
+            await self.bot.send_message(channel_id, error_msg, is_dm=is_dm, author_id=str(author_id))
             return
 
         response = "**Birthday Matching**\n\n"
@@ -399,8 +571,12 @@ class BirthdayHandler:
 
         members = await self.bot._get_guild_members(target_guild_id)
         if not members:
-            await self.bot.send_message(channel_id,
-                "❌ Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
+            error_msg = (
+                "❌ **Could not fetch server members.**\n\n"
+                "Try using `!birthday set <user_id> MM-DD` instead.\n"
+                "Example: `!birthday set 764630517197963274 01-07`"
+            )
+            await self.bot.send_message(channel_id, error_msg, is_dm=is_dm, author_id=str(author_id))
             return
 
         matched_user = None
@@ -452,16 +628,23 @@ class BirthdayHandler:
                 is_dm=is_dm, author_id=str(author_id))
             return
 
-        user_mention = args[1]
+        user_arg = args[1]
         birthday_str = args[2]
-        user_match = re.match(r'<@!?(\d+)>', user_mention)
-        if not user_match:
+
+        # Support both @mention and raw user ID (17-20 digit Discord snowflake)
+        user_match = re.match(r'<@!?(\d+)>', user_arg)
+        if user_match:
+            target_user_id = user_match.group(1)
+        elif re.match(r'^\d{17,20}$', user_arg):
+            # Raw Discord user ID (snowflake format)
+            target_user_id = user_arg
+        else:
             await self.bot.send_message(channel_id,
-                "❌ Please mention a user: `!birthday set @user MM-DD`",
+                "❌ Please mention a user or provide their ID:\n"
+                "`!birthday set @user MM-DD`\n"
+                "`!birthday set 764630517197963274 MM-DD`",
                 is_dm=is_dm, author_id=str(author_id))
             return
-
-        target_user_id = user_match.group(1)
         try:
             month_str, day_str = birthday_str.split('-')
             month, day = int(month_str), int(day_str)
@@ -616,7 +799,7 @@ class BirthdayHandler:
                     month = data['month']
                     if month not in months:
                         months[month] = []
-                    months[month].append((user_id, data['day'], data.get('name', 'Unknown')))
+                    months[month].append((user_id, data['day'], data.get('name', 'Unknown'), data.get('year')))
 
                 text = "🎂 **All Registered Birthdays**\n"
                 text += f"*Total: {len(all_birthdays)} birthdays*\n\n"
@@ -626,12 +809,18 @@ class BirthdayHandler:
 
                 for month in sorted(months.keys()):
                     text += f"**{month_names[month]}**\n"
-                    for user_id, day, name in sorted(months[month], key=lambda x: x[1]):
+                    for user_id, day, name, year in sorted(months[month], key=lambda x: x[1]):
                         formatted_date = self.bot.birthday_manager.format_birthday_date(month, day)
+                        # Get zodiac symbols
+                        western = get_western_zodiac(month, day)
+                        zodiac_str = western['symbol']
+                        if year:
+                            chinese = get_chinese_zodiac(year)
+                            zodiac_str += chinese['emoji']
                         if name and name != 'Unknown':
-                            text += f"- {name} (<@{user_id}>) - {formatted_date}\n"
+                            text += f"- {name} (<@{user_id}>) - {formatted_date} {zodiac_str}\n"
                         else:
-                            text += f"- <@{user_id}> - {formatted_date}\n"
+                            text += f"- <@{user_id}> - {formatted_date} {zodiac_str}\n"
 
                 text += "\n💡 Use `!birthday list` to see only upcoming birthdays"
             else:
@@ -642,12 +831,19 @@ class BirthdayHandler:
                 text = "🎂 **Upcoming Birthdays (next 7 days)**\n"
                 for user_id, month, day, days_until in birthdays:
                     formatted = self.bot.birthday_manager.format_birthday_date(month, day)
+                    # Get zodiac symbols
+                    western = get_western_zodiac(month, day)
+                    zodiac_str = western['symbol']
+                    birthday_data = self.bot.birthday_manager.birthdays.get(user_id)
+                    if birthday_data and birthday_data.get('year'):
+                        chinese = get_chinese_zodiac(birthday_data['year'])
+                        zodiac_str += chinese['emoji']
                     if days_until == 0:
-                        text += f"• <@{user_id}> - **Today!** {formatted} 🎉\n"
+                        text += f"• <@{user_id}> - **Today!** {formatted} {zodiac_str} 🎉\n"
                     elif days_until == 1:
-                        text += f"• <@{user_id}> - Tomorrow ({formatted})\n"
+                        text += f"• <@{user_id}> - Tomorrow ({formatted}) {zodiac_str}\n"
                     else:
-                        text += f"• <@{user_id}> - {formatted} ({days_until} days)\n"
+                        text += f"• <@{user_id}> - {formatted} {zodiac_str} ({days_until} days)\n"
                 text += "\n💡 Use `!birthday list all` to see all birthdays"
             else:
                 text = "No upcoming birthdays in the next 7 days! 🌱\n"

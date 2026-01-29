@@ -8,6 +8,11 @@ from datetime import datetime
 from typing import Dict, Any
 
 from input_validator import InputValidator
+from config import (
+    CONVERSATION_HISTORY_LIMIT,
+    CONVERSATION_STORAGE_LIMIT,
+    PERSISTENT_MEMORY_LIMIT,
+)
 
 
 class ConversationHandler:
@@ -22,8 +27,6 @@ class ConversationHandler:
 
         # Sanitize user input
         content = InputValidator.sanitize_string(raw_content, max_length=2000)
-
-        await self.bot.send_typing(channel_id, is_dm=True, author_id=author_id, duration=5)
 
         # Check if there's an active feedback session (auto-expire after 30 min)
         if author_id in self.bot.feedback_manager.sessions:
@@ -68,14 +71,13 @@ class ConversationHandler:
         # Get conversation history from in-memory store
         conversation = self.bot._dm_conversations.get(author_id, [])
 
-        # Get personality for memory/token limits
+        # Get personality for token limits
         personality = self.bot.personality_manager.get_user_personality(str(author_id))
-        memory_limit = personality.get('memory_limit', 5)
 
         # Add persistent memories if enabled
         persistent_memories = []
         if self.bot.memory_manager.is_memory_enabled(author_id):
-            memories = self.bot.memory_manager.get_recent_memories(author_id, limit=memory_limit)
+            memories = self.bot.memory_manager.get_recent_memories(author_id, limit=PERSISTENT_MEMORY_LIMIT)
             for mem in memories:
                 role = 'user' if mem['author'] == 'user' else 'assistant'
                 persistent_memories.append({'role': role, 'content': mem['content']})
@@ -103,23 +105,28 @@ class ConversationHandler:
         # Generate natural response using LLM
         try:
             context_messages = []
-            mem_context_limit = personality.get('memory_limit', 5)
             if persistent_memories:
-                context_messages.extend(persistent_memories[-mem_context_limit:])
-            for msg in conversation[-5:]:
+                context_messages.extend(persistent_memories[-PERSISTENT_MEMORY_LIMIT:])
+            for msg in conversation[-CONVERSATION_HISTORY_LIMIT:]:
                 context_messages.append({"role": msg['role'], "content": msg['content']})
             context_messages.append({"role": "user", "content": content})
 
             system = self.bot._get_system_for_personality(personality, is_dm=True)
             max_tokens = personality.get('max_tokens', 800)
 
-            result = await self.bot.model_client.complete(
-                personality=personality,
-                system=system,
-                messages=context_messages,
-                max_tokens=max_tokens,
-                temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
-            )
+            # Get DM channel for typing indicator
+            user = self.bot.get_user(int(author_id)) or await self.bot.fetch_user(int(author_id))
+            dm_channel = user.dm_channel or await user.create_dm()
+
+            # Show typing while LLM generates
+            async with dm_channel.typing():
+                result = await self.bot.model_client.complete(
+                    personality=personality,
+                    system=system,
+                    messages=context_messages,
+                    max_tokens=max_tokens,
+                    temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
+                )
             self.bot._record_api_usage_from_result(result, "dm",
                                                    user_id=author_id, channel_id=channel_id)
             reply = result.text
@@ -137,8 +144,8 @@ class ConversationHandler:
             # Save to in-memory conversation
             conversation.append({'role': 'user', 'content': content[:500], 'timestamp': datetime.utcnow().isoformat()})
             conversation.append({'role': 'assistant', 'content': reply[:500], 'timestamp': datetime.utcnow().isoformat()})
-            if len(conversation) > 10:
-                conversation = conversation[-10:]
+            if len(conversation) > CONVERSATION_STORAGE_LIMIT:
+                conversation = conversation[-CONVERSATION_STORAGE_LIMIT:]
             self.bot._dm_conversations[author_id] = conversation
 
             # Save to persistent memory
@@ -164,8 +171,6 @@ class ConversationHandler:
         # Sanitize user input
         content = InputValidator.sanitize_string(raw_content, max_length=2000)
 
-        await self.bot.send_typing(channel_id)
-
         # Save to memory
         if self.bot.memory_manager.is_memory_enabled(author_id):
             self.bot.memory_manager.add_memory(
@@ -173,13 +178,12 @@ class ConversationHandler:
                 'guild' if guild_id else 'dm', guild_id, channel_id
             )
 
-        # Get personality for memory/token limits
+        # Get personality for token limits
         personality = self.bot.personality_manager.get_user_personality(str(author_id))
-        memory_limit = personality.get('memory_limit', 5)
 
         # Get channel-specific conversation context
         recent_messages = self.bot.memory_manager.get_recent_memories(
-            author_id, limit=memory_limit,
+            author_id, limit=CONVERSATION_HISTORY_LIMIT,
             channel_type='guild',
             guild_id=guild_id,
             channel_id=channel_id
@@ -188,7 +192,7 @@ class ConversationHandler:
         try:
             messages = []
             if recent_messages:
-                for msg in recent_messages[-memory_limit:]:
+                for msg in recent_messages[-CONVERSATION_HISTORY_LIMIT:]:
                     role = 'user' if msg['author'] == 'user' else 'assistant'
                     messages.append({"role": role, "content": msg['content']})
 
@@ -205,13 +209,18 @@ class ConversationHandler:
             system = self.bot._get_system_for_personality(personality, channel_topic=channel_topic, is_dm=False)
             max_tokens = max(personality.get('max_tokens', 800), 1200)
 
-            result = await self.bot.model_client.complete(
-                personality=personality,
-                system=system,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
-            )
+            # Get channel for typing indicator
+            channel = self.bot.get_channel(int(channel_id))
+
+            # Show typing while LLM generates
+            async with channel.typing():
+                result = await self.bot.model_client.complete(
+                    personality=personality,
+                    system=system,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=float(os.getenv('SEEDKEEPER_TEMPERATURE', '1.0')),
+                )
             self.bot._record_api_usage_from_result(result, "mention",
                                                    user_id=author_id, channel_id=channel_id)
             reply = result.text

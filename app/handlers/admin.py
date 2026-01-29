@@ -1,12 +1,8 @@
-"""Admin command handlers: admin management, config, status, update-bot, reload."""
+"""Admin command handlers: admin management, config, status, reload."""
 
-import asyncio
 import time
 from datetime import timedelta
 from typing import Dict, Any
-
-from prompt_compiler import PromptCompiler
-from views_manager import ViewsManager, format_update_message
 
 
 class AdminHandler:
@@ -28,7 +24,6 @@ class AdminHandler:
 - `!admin list` - List all Garden Keepers
 - `!config` - View bot configuration
 - `!config [key] [value]` - Update configuration
-- `!update-bot` - Refresh perspectives
 - `!status` - Show admin status and statistics
 
 *With great gardens come great responsibility* 🌱"""
@@ -161,43 +156,3 @@ class AdminHandler:
             else:
                 await self.bot.send_message(channel_id, f"Configuration key '{key}' not found.",
                     is_dm=is_dm, author_id=str(author_id))
-
-    async def handle_update_bot_command(self, command_data: Dict[str, Any]):
-        """Handle !update-bot command."""
-        channel_id = command_data['channel_id']
-        is_dm = command_data.get('is_dm', False)
-        author_id = command_data.get('author_id')
-
-        await self.bot.send_message(channel_id,
-            "🌱 *Reaching out to Lightward for fresh perspectives...*",
-            is_dm=is_dm, author_id=str(author_id))
-        asyncio.create_task(self._run_perspective_update(channel_id, is_dm, str(author_id)))
-
-    async def _run_perspective_update(self, channel_id: str, is_dm: bool, author_id: str):
-        """Run the perspective update process in background."""
-        start_time = time.time()
-        try:
-            await self.bot.send_typing(channel_id, is_dm=is_dm, author_id=author_id, duration=10)
-
-            manager = ViewsManager()
-            result = await asyncio.to_thread(manager.download_views)
-
-            message = format_update_message(result)
-            elapsed = time.time() - start_time
-            message += f"\n\nUpdate completed in {elapsed:.1f} seconds"
-
-            await self.bot.send_message(channel_id, message, is_dm=is_dm, author_id=author_id)
-
-            if result.get('success'):
-                self.bot.prompt_compiler = PromptCompiler()
-                self.bot._views_manager = ViewsManager()
-                self.bot._views_manager.parse_views()
-                print(f"Reloaded prompt compiler with updated perspectives")
-
-        except Exception as e:
-            print(f"Error in perspective update: {e}")
-            import traceback
-            traceback.print_exc()
-            await self.bot.send_message(channel_id,
-                f"❌ **Update Error**\n\n{str(e)}\n\n*The Garden remains unchanged.*",
-                is_dm=is_dm, author_id=author_id)

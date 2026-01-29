@@ -5,7 +5,6 @@ Prevents injection attacks and ensures data integrity
 """
 
 import re
-import html
 from typing import Optional, Union, List, Tuple
 from datetime import datetime
 import logging
@@ -54,10 +53,10 @@ class InputValidator:
         
         # Truncate to max length
         text = text[:max_length]
-        
-        # HTML escape to prevent XSS
-        text = html.escape(text)
-        
+
+        # Note: HTML escaping removed - Discord doesn't render HTML
+        # and it was causing apostrophes to become &#x27; in output
+
         # Remove null bytes
         text = text.replace('\x00', '')
         

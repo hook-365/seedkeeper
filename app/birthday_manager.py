@@ -52,8 +52,9 @@ class BirthdayManager:
         """Save pending confirmations"""
         atomic_json_write(self.pending_file, self.pending_confirmations, indent=2)
     
-    def set_birthday(self, user_id: str, month: int, day: int, 
-                    added_by: str, method: str = "manual", name: str = None) -> Tuple[bool, str]:
+    def set_birthday(self, user_id: str, month: int, day: int,
+                    added_by: str, method: str = "manual", name: str = None,
+                    year: int = None) -> Tuple[bool, str]:
         """
         Set a user's birthday
         Returns (success, message)
@@ -82,6 +83,11 @@ class BirthdayManager:
                 }
                 if name:
                     birthday_data['name'] = name
+                if year:
+                    birthday_data['year'] = year
+                # Preserve existing year if not being updated
+                elif 'year' in existing:
+                    birthday_data['year'] = existing['year']
                 self.birthdays[user_id] = birthday_data
                 self.save_birthdays()
                 return True, "Birthday updated successfully! 🎂"
@@ -97,6 +103,8 @@ class BirthdayManager:
         }
         if name:
             birthday_data['name'] = name
+        if year:
+            birthday_data['year'] = year
         self.birthdays[user_id] = birthday_data
         self.save_birthdays()
         return True, "Birthday registered successfully! 🎂"
@@ -108,7 +116,18 @@ class BirthdayManager:
             self.save_birthdays()
             return True, "Birthday removed."
         return False, "No birthday found to remove."
-    
+
+    def set_year(self, user_id: str, year: int) -> Tuple[bool, str]:
+        """Set/update just the birth year for an existing birthday."""
+        if user_id not in self.birthdays:
+            return False, "No birthday on file. Use `!birthday mine MM-DD` first."
+        if year < 1900 or year > datetime.now().year:
+            return False, "Please enter a valid birth year (1900-present)."
+        self.birthdays[user_id]['year'] = year
+        self.birthdays[user_id]['updated_at'] = datetime.now().isoformat()
+        self.save_birthdays()
+        return True, "Birth year added! 🎂"
+
     def get_birthday(self, user_id: str) -> Optional[Dict]:
         """Get a user's birthday info"""
         return self.birthdays.get(user_id)
