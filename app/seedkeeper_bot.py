@@ -24,6 +24,7 @@ from birthday_manager import BirthdayManager
 from nlp_processor import NLPProcessor
 from memory_manager import MemoryManager
 from usage_tracker import UsageTracker
+from activity_tracker import ActivityTracker
 from prompt_compiler import PromptCompiler
 from views_manager import ViewsManager
 from feedback_manager import FeedbackManager
@@ -34,8 +35,8 @@ from commands import COMMANDS, resolve_command, generate_commands_reference
 from handlers import (
     GardenHandler, ConversationHandler, CatchupHandler,
     BirthdayHandler, MemoryHandler, AdminHandler,
-    CostHandler, FeedbackHandler, PersonalityHandler,
-    CommandsListHandler, HealthHandler,
+    FeedbackHandler, PersonalityHandler,
+    CommandsListHandler, HealthHandler, InsightsHandler,
 )
 
 load_dotenv()
@@ -75,6 +76,7 @@ class SeedkeeperBot(commands.Bot):
         self.feedback_manager = FeedbackManager('data')
         self.nlp_processor = NLPProcessor()
         self.usage_tracker = UsageTracker('data')
+        self.activity_tracker = ActivityTracker('data')
         self.personality_manager = PersonalityManager('data')
         self.model_client = ModelClient()
         self.rate_limiter = RateLimiter('data')
@@ -97,18 +99,18 @@ class SeedkeeperBot(commands.Bot):
         self._birthday = BirthdayHandler(self)
         self._memory = MemoryHandler(self)
         self._admin = AdminHandler(self)
-        self._cost = CostHandler(self)
         self._feedback = FeedbackHandler(self)
         self._personality = PersonalityHandler(self)
         self._commands_list = CommandsListHandler(self)
         self._health = HealthHandler(self)
+        self._insights = InsightsHandler(self)
 
         # Build dispatch map from registry
         handler_objects = [
             self._garden, self._conversation, self._catchup,
             self._birthday, self._memory, self._admin,
-            self._cost, self._feedback, self._personality,
-            self._commands_list, self._health,
+            self._feedback, self._personality,
+            self._commands_list, self._health, self._insights,
         ]
         self._handler_map = {}
         for cmd_name, cmd_info in COMMANDS.items():
@@ -159,8 +161,8 @@ class SeedkeeperBot(commands.Bot):
             print("[Birthday] BIRTHDAY_CHANNEL_ID not set - birthday announcements disabled")
             return
 
-        # Get announcement time from settings (default 9:00 AM)
-        announcement_time_str = self.admin_manager.settings.get('birthday_announcement_time', '09:00')
+        # Get announcement time from config (default 9:00 AM)
+        announcement_time_str = self.admin_manager.config.get('birthday_announcement_time', '09:00')
         try:
             hour, minute = map(int, announcement_time_str.split(':'))
         except ValueError:
@@ -410,6 +412,22 @@ Output ONLY the poem, no introduction or explanation."""
             'is_mention': self.user.mentioned_in(message),
             'timestamp': message.created_at.isoformat()
         }
+
+        # Track activity (privacy-preserving: no content stored)
+        is_command = content.startswith('!')
+        command_name = None
+        if is_command:
+            parts = content[1:].split(maxsplit=1)
+            command_name = resolve_command(parts[0].lower()) if parts else None
+
+        self.activity_tracker.record_message(
+            user_id=command_data['author_id'],
+            is_dm=is_dm,
+            is_mention=command_data['is_mention'],
+            is_command=is_command,
+            command_name=command_name,
+            guild_id=command_data['guild_id'],
+        )
 
         # Handle commands
         if content.startswith('!'):

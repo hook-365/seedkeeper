@@ -131,6 +131,15 @@ COMMANDS: Dict[str, CommandInfo] = {
         category="Admin",
         handler="handle_status_command",
     ),
+    "insights": CommandInfo(
+        "insights",
+        "Activity dashboard & usage patterns",
+        "!insights [summary|today|trend|peak|commands|llm|lifetime|full]",
+        aliases=["stats", "activity"],
+        admin_only=True,
+        category="Admin",
+        handler="handle_insights_command",
+    ),
 }
 
 
@@ -200,10 +209,12 @@ def format_commands_text(is_admin: bool = False) -> str:
 def generate_commands_reference() -> str:
     """Generate a plain text reference for the system prompt."""
     lines = ["Your commands (all start with !):"]
+    admin_cmds = []
     for cmd in sorted(COMMANDS.values(), key=lambda c: c.name):
         if cmd.admin_only:
+            admin_cmds.append(f"!{cmd.name}")
             continue
         alias_part = f" (or !{', !'.join(cmd.aliases)})" if cmd.aliases else ""
         lines.append(f"- {cmd.usage}{alias_part} - {cmd.description}")
-    lines.append("- Admin commands: !config, !admin, !status")
+    lines.append(f"- Admin commands: {', '.join(admin_cmds)}")
     return "\n".join(lines)
