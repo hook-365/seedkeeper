@@ -3,12 +3,118 @@
 import os
 import re
 from collections import defaultdict
-from typing import Dict, Any
+from datetime import datetime, timedelta
+from difflib import SequenceMatcher
+from typing import Dict, Any, List, Optional, Tuple
+
+from zodiac import format_sign_display, get_western_zodiac
+
+
+def fuzzy_match_user(name: str, nickname: Optional[str], members: List[Dict]) -> Tuple[Optional[Dict], float]:
+    """
+    Fuzzy match a name/nickname against server members.
+    Returns (best_match, confidence) where confidence is 0-1.
+    """
+    best_match = None
+    best_score = 0.0
+
+    search_terms = [name.lower()]
+    if nickname:
+        search_terms.append(nickname.lower())
+
+    for member in members:
+        member_names = [
+            member.get('name', '').lower(),
+            member.get('nick', '').lower() if member.get('nick') else '',
+            member.get('display_name', '').lower(),
+        ]
+        # Also check without special chars
+        member_names.extend([re.sub(r'[^a-z0-9]', '', n) for n in member_names])
+
+        for search in search_terms:
+            search_clean = re.sub(r'[^a-z0-9]', '', search)
+            for mname in member_names:
+                if not mname:
+                    continue
+
+                # Exact match
+                if search == mname or search_clean == mname:
+                    return member, 1.0
+
+                # Substring match
+                if search in mname or mname in search:
+                    score = 0.85
+                    if score > best_score:
+                        best_score = score
+                        best_match = member
+                    continue
+
+                # Fuzzy match
+                ratio = SequenceMatcher(None, search, mname).ratio()
+                if ratio > best_score and ratio > 0.6:
+                    best_score = ratio
+                    best_match = member
+
+                # Also try clean versions
+                mname_clean = re.sub(r'[^a-z0-9]', '', mname)
+                ratio_clean = SequenceMatcher(None, search_clean, mname_clean).ratio()
+                if ratio_clean > best_score and ratio_clean > 0.6:
+                    best_score = ratio_clean
+                    best_match = member
+
+    return best_match, best_score
 
 
 class BirthdayHandler:
     def __init__(self, bot):
         self.bot = bot
+
+    async def handle_sign_command(self, command_data: Dict[str, Any]):
+        """Handle !sign command - show zodiac signs."""
+        args = command_data.get('args', '').strip()
+        author_id = str(command_data.get('author_id'))
+        channel_id = command_data.get('channel_id')
+        is_dm = command_data.get('is_dm', False)
+
+        # Determine target user
+        target_id = author_id
+        target_name = None
+
+        if args:
+            # Check for @mention
+            mention_match = re.match(r'<@!?(\d+)>', args)
+            if mention_match:
+                target_id = mention_match.group(1)
+
+        # Look up birthday
+        birthday_data = self.bot.birthday_manager.birthdays.get(target_id)
+
+        if not birthday_data:
+            if target_id == author_id:
+                await self.bot.send_message(channel_id,
+                    "I don't have your birthday on file. Use `!birthday mine MM-DD` to set it.",
+                    is_dm=is_dm, author_id=author_id)
+            else:
+                await self.bot.send_message(channel_id,
+                    "I don't have that person's birthday on file.",
+                    is_dm=is_dm, author_id=author_id)
+            return
+
+        month = birthday_data['month']
+        day = birthday_data['day']
+        year = birthday_data.get('year')  # Optional
+        name = birthday_data.get('name')
+
+        # Try to get display name if not stored
+        if not name and target_id != author_id:
+            try:
+                user = await self.bot.fetch_user(int(target_id))
+                name = user.display_name if user else None
+            except:
+                pass
+
+        display = format_sign_display(month, day, year, name)
+        await self.bot.send_message(channel_id, display, is_dm=is_dm, author_id=author_id)
 
     async def handle_birthday_command(self, command_data: Dict[str, Any]):
         """Handle birthday commands."""
@@ -66,7 +172,7 @@ class BirthdayHandler:
         elif subcommand == 'set' and len(args) >= 3:
             await self._handle_set(args, author_id, channel_id, is_dm)
         elif subcommand == 'scan':
-            await self._handle_scan(author_id, channel_id, is_dm)
+            await self._handle_scan(author_id, channel_id, is_dm, args=args, guild_id=guild_id)
         elif subcommand == 'list':
             await self._handle_list(args, author_id, channel_id, is_dm)
         else:
@@ -158,133 +264,122 @@ class BirthdayHandler:
     async def _handle_match(self, author_id, channel_id, is_dm, guild_id):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "🚫 Only Garden Keepers can match birthdays.", is_dm=is_dm, author_id=str(author_id))
+                "Only Garden Keepers can match birthdays.", is_dm=is_dm, author_id=str(author_id))
             return
 
+        # Check for parsed data from parse command or scan command
         parsed_data = self.bot._get_temp(f"birthday_parse:{author_id}")
-        if not parsed_data:
+        scan_data = self.bot._temp_state.get(f"birthday_scan_{author_id}", {}).get('birthdays')
+
+        birthdays = parsed_data or scan_data
+        if not birthdays:
             await self.bot.send_message(channel_id,
-                "❌ No parsed birthday data found. Please run `!birthday parse` first.",
+                "No parsed birthday data found. Use `!birthday parse [text]` or `!birthday scan [link]` first.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
-        birthdays = parsed_data
-        members = self.bot._get_guild_members(guild_id) if guild_id else []
+        members = await self.bot._get_guild_members(guild_id) if guild_id else []
+        if not members:
+            await self.bot.send_message(channel_id,
+                "Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
+            return
 
-        response = "🔍 **Birthday Matching Assistant**\n\n"
-        response += f"I found {len(birthdays)} birthdays. Attempting to match with server members...\n\n"
-
-        by_month = defaultdict(list)
-        matched_count = 0
+        response = "**Birthday Matching**\n\n"
+        matched = []
         unmatched = []
 
         for b in birthdays:
-            matched_user = None
-            name_lower = b['name'].lower()
-            nick_lower = b['nickname'].lower() if b.get('nickname') else None
+            name = b.get('name', '')
+            nickname = b.get('nickname')
 
-            for member in members:
-                member_name = member.get('name', '').lower()
-                member_nick = member.get('nick', '').lower()
-                member_display = member.get('display_name', '').lower()
+            match, confidence = fuzzy_match_user(name, nickname, members)
 
-                if (name_lower in member_name or
-                    name_lower in member_nick or
-                    name_lower in member_display or
-                    (nick_lower and (nick_lower in member_name or
-                                   nick_lower in member_nick or
-                                   nick_lower in member_display))):
-                    matched_user = member
-                    matched_count += 1
-                    b['matched_user'] = member
-                    break
-
-            if not matched_user:
+            if match and confidence >= 0.6:
+                b['matched_user'] = match
+                b['confidence'] = confidence
+                matched.append(b)
+            else:
                 unmatched.append(b)
-            by_month[b['month']].append(b)
 
-        month_display = {
-            1: 'January', 2: 'February', 3: 'March', 4: 'April',
-            5: 'May', 6: 'June', 7: 'July', 8: 'August',
-            9: 'September', 10: 'October', 11: 'November', 12: 'December'
+        # Store for confirmation
+        self.bot._temp_state[f"birthday_matched_{author_id}"] = {
+            'matched': matched,
+            'unmatched': unmatched,
+            'expires': (datetime.now() + timedelta(minutes=10)).isoformat()
         }
 
-        if matched_count > 0:
-            response += f"✅ **Matched {matched_count} birthdays:**\n\n"
-            for month in sorted(by_month.keys()):
-                has_matched = any(b.get('matched_user') for b in by_month[month])
-                if has_matched:
-                    response += f"**{month_display[month]}:**\n"
-                    for b in sorted(by_month[month], key=lambda x: x['day']):
-                        if b.get('matched_user'):
-                            user = b['matched_user']
-                            response += f"- {month:02d}-{b['day']:02d} - {b['name']} -> <@{user['id']}>\n"
+        if matched:
+            response += f"**Matched ({len(matched)}):**\n"
+            for b in sorted(matched, key=lambda x: (x['month'], x['day'])):
+                user = b['matched_user']
+                conf = b['confidence']
+                conf_str = "exact" if conf >= 0.95 else f"{conf:.0%}"
+                name_str = b.get('name', '?')
+                if b.get('nickname'):
+                    name_str += f" ({b['nickname']})"
+                response += f"- {b['month']}/{b['day']} {name_str} -> <@{user['id']}> [{conf_str}]\n"
 
         if unmatched:
-            response += f"\n⚠️ **Could not match {len(unmatched)} birthdays:**\n\n"
-            unmatched_by_month = defaultdict(list)
+            response += f"\n**No match found ({len(unmatched)}):**\n"
             for b in unmatched:
-                unmatched_by_month[b['month']].append(b)
-            for month in sorted(unmatched_by_month.keys()):
-                response += f"**{month_display[month]}:**\n"
-                for b in sorted(unmatched_by_month[month], key=lambda x: x['day']):
-                    name_str = b['name']
-                    if b.get('nickname'):
-                        name_str += f" ({b['nickname']})"
-                    response += f"- {month:02d}-{b['day']:02d} - {name_str}\n"
+                name_str = b.get('name', '?')
+                if b.get('nickname'):
+                    name_str += f" ({b['nickname']})"
+                response += f"- {b['month']}/{b['day']} {name_str}\n"
 
-        response += "\n**Next steps:**\n"
-        if matched_count > 0:
-            response += f"1. Use `!birthday confirm` to add all {matched_count} matched birthdays\n"
-        if unmatched:
-            response += f"2. Manually add unmatched users: `!birthday set @user MM-DD`\n"
-
-        if matched_count > 0:
-            matched_data = [b for b in birthdays if b.get('matched_user')]
-            self.bot._set_temp(f"birthday_matched:{author_id}", matched_data, 300)
-
-        self.bot._del_temp(f"birthday_parse:{author_id}")
+        response += "\n`!birthday confirm` to save matched birthdays."
         await self.bot.send_message(channel_id, response, is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_confirm(self, author_id, channel_id, is_dm):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "🚫 Only Garden Keepers can confirm birthday additions.",
+                "Only Garden Keepers can confirm birthday additions.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
+        # Check both old and new storage locations
         matched_data = self.bot._get_temp(f"birthday_matched:{author_id}")
         if not matched_data:
+            new_data = self.bot._temp_state.get(f"birthday_matched_{author_id}", {})
+            matched_data = new_data.get('matched', [])
+
+        if not matched_data:
             await self.bot.send_message(channel_id,
-                "❌ No matched birthday data found. Run `!birthday parse` and `!birthday match` first.",
+                "No matched birthday data found. Run `!birthday parse` or `!birthday scan`, then `!birthday match` first.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
         added_count = 0
         failed_count = 0
-        response = "🎂 **Adding matched birthdays...**\n\n"
+        response = "**Adding matched birthdays...**\n\n"
 
         for b in matched_data:
             if 'matched_user' in b:
                 uid = b['matched_user']['id']
                 month = b['month']
                 day = b['day']
+                name = b.get('name')
                 success, message = self.bot.birthday_manager.set_birthday(
-                    uid, month, day, str(author_id), method="batch_import"
+                    uid, month, day, str(author_id), method="batch_import", name=name
                 )
                 if success:
                     added_count += 1
-                    response += f"✅ Added <@{uid}> - {month:02d}-{day:02d}\n"
+                    response += f"Added <@{uid}> - {month}/{day}\n"
                 else:
                     failed_count += 1
-                    response += f"⚠️ Failed for <@{uid}>: {message}\n"
+                    response += f"Failed <@{uid}>: {message}\n"
 
-        response += f"\n**Summary:** Added: {added_count}"
+        response += f"\n**Done:** {added_count} added"
         if failed_count > 0:
-            response += f", Failed: {failed_count}"
-        response += "\n\n🎉 Birthday import complete!"
+            response += f", {failed_count} failed"
 
+        # Clean up temp data
         self.bot._del_temp(f"birthday_matched:{author_id}")
+        if f"birthday_matched_{author_id}" in self.bot._temp_state:
+            del self.bot._temp_state[f"birthday_matched_{author_id}"]
+        if f"birthday_scan_{author_id}" in self.bot._temp_state:
+            del self.bot._temp_state[f"birthday_scan_{author_id}"]
+
         await self.bot.send_message(channel_id, response, is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_add(self, args, author_id, channel_id, is_dm, guild_id):
@@ -302,7 +397,7 @@ class BirthdayHandler:
         await self.bot.send_message(channel_id,
             f"🔍 Searching for user '{username}'...", is_dm=is_dm, author_id=str(author_id))
 
-        members = self.bot._get_guild_members(target_guild_id)
+        members = await self.bot._get_guild_members(target_guild_id)
         if not members:
             await self.bot.send_message(channel_id,
                 "❌ Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
@@ -386,16 +481,131 @@ class BirthdayHandler:
                 "❌ Please use MM-DD format (e.g., 03-15 for March 15th)",
                 is_dm=is_dm, author_id=str(author_id))
 
-    async def _handle_scan(self, author_id, channel_id, is_dm):
+    async def _handle_scan(self, author_id, channel_id, is_dm, args=None, guild_id=None):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "🚫 Only Garden Keepers can scan for birthdays.",
+                "Only Garden Keepers can scan for birthdays.",
                 is_dm=is_dm, author_id=str(author_id))
             return
+
+        # If no message link provided, show usage
+        if not args or len(args) < 2:
+            await self.bot.send_message(channel_id,
+                "**Birthday Scan**\n\n"
+                "Scan channel history for birthday mentions.\n\n"
+                "Usage: `!birthday scan [message_link]`\n\n"
+                "I'll scan from that message forward and find any birthdays mentioned.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        message_link = args[1]
+
+        # Parse Discord message link
+        link_pattern = r'https://discord\.com/channels/(\d+)/(\d+)/(\d+)'
+        match = re.match(link_pattern, message_link)
+
+        if not match:
+            await self.bot.send_message(channel_id,
+                "That doesn't look like a Discord message link. Right-click a message and 'Copy Message Link'.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
+        link_guild_id, link_channel_id, message_id = match.groups()
+
+        # Security check
+        if guild_id and guild_id != link_guild_id:
+            await self.bot.send_message(channel_id,
+                "I can only scan channels from this server.",
+                is_dm=is_dm, author_id=str(author_id))
+            return
+
         await self.bot.send_message(channel_id,
-            "🔍 Birthday scanning is done through the `!birthday parse` command.\n"
-            "Copy birthday text and use: `!birthday parse [text]`",
+            "🔍 *Scanning channel for birthday mentions...*",
             is_dm=is_dm, author_id=str(author_id))
+
+        try:
+            import discord
+            target_channel = self.bot.get_channel(int(link_channel_id))
+            if not target_channel:
+                await self.bot.send_message(channel_id,
+                    "I can't access that channel.",
+                    is_dm=is_dm, author_id=str(author_id))
+                return
+
+            found_birthdays = []
+            scanned = 0
+
+            async for msg in target_channel.history(limit=500, after=discord.Object(id=int(message_id))):
+                scanned += 1
+                content = msg.content
+
+                # Try structured list parsing first
+                list_results = self.bot.birthday_manager.parse_birthday_list(content)
+                if list_results:
+                    for r in list_results:
+                        found_birthdays.append({
+                            'name': r.get('name', 'Unknown'),
+                            'month': r['month'],
+                            'day': r['day'],
+                            'source': f"List format in message by {msg.author.name}",
+                            'username': r.get('username')
+                        })
+
+                # Try advanced parsing
+                advanced_results = self.bot.birthday_manager.parse_birthday_advanced(content)
+                for r in advanced_results:
+                    if r.get('month') and r.get('day'):
+                        found_birthdays.append({
+                            'name': r.get('name', msg.author.name),
+                            'month': r['month'],
+                            'day': r['day'],
+                            'source': f"Mentioned by {msg.author.name}",
+                            'confidence': r.get('confidence', 0.5)
+                        })
+
+            if not found_birthdays:
+                await self.bot.send_message(channel_id,
+                    f"Scanned {scanned} messages but didn't find any birthday mentions.\n\n"
+                    "Tip: You can also paste birthday text directly with `!birthday parse [text]`",
+                    is_dm=is_dm, author_id=str(author_id))
+                return
+
+            # Deduplicate by name
+            seen = set()
+            unique = []
+            for b in found_birthdays:
+                key = (b.get('name', '').lower(), b['month'], b['day'])
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(b)
+
+            # Store for confirmation
+            self.bot._temp_state[f'birthday_scan_{author_id}'] = {
+                'birthdays': unique,
+                'expires': (datetime.now() + timedelta(minutes=10)).isoformat()
+            }
+
+            # Format results
+            month_names = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+            result_text = f"**Found {len(unique)} potential birthdays** (scanned {scanned} messages)\n\n"
+            for i, b in enumerate(unique[:20], 1):  # Limit display to 20
+                date_str = f"{month_names[b['month']]} {b['day']}"
+                result_text += f"{i}. **{b.get('name', 'Unknown')}** - {date_str}\n"
+
+            if len(unique) > 20:
+                result_text += f"\n*...and {len(unique) - 20} more*\n"
+
+            result_text += "\n\nUse `!birthday match` to match these to Discord users, then `!birthday confirm` to save."
+
+            await self.bot.send_message(channel_id, result_text, is_dm=is_dm, author_id=str(author_id))
+
+        except Exception as e:
+            print(f"Error scanning for birthdays: {e}")
+            await self.bot.send_message(channel_id,
+                f"Error scanning channel: {e}",
+                is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_list(self, args, author_id, channel_id, is_dm):
         if len(args) > 1 and args[1].lower() == 'all':

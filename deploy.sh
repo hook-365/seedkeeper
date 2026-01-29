@@ -8,7 +8,11 @@ echo ""
 
 cd /storage/docker/seedkeeper
 
-docker compose build
+# Build image directly (compose file uses pre-built image)
+docker build -t seedkeeper:latest .
+
+# Restart with new image
+docker compose down 2>/dev/null || true
 docker compose up -d
 
 echo ""

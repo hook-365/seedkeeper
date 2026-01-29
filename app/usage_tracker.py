@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Usage Tracker - Records and analyzes Claude API usage and costs.
+Usage Tracker - Records and analyzes LLM usage patterns.
 Thread-safe JSON persistence with 90-day auto-pruning.
+
+Note: With local Ollama models, there are no API costs.
+Token tracking is maintained for monitoring usage patterns.
 """
 
 import json
@@ -11,26 +14,12 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 
-# Model pricing per 1M tokens (input, output)
-MODEL_PRICING = {
-    # Current models
-    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
-    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
-    # Legacy (for historical records)
-    "claude-3-5-haiku-20241022": {"input": 0.80, "output": 4.00},
-    "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
-}
-
-# Conservative fallback for unknown models
-DEFAULT_PRICING = {"input": 3.00, "output": 15.00}
-
-
 def _empty_bucket() -> Dict[str, Any]:
     return {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0}
 
 
 class UsageTracker:
-    """Tracks Claude API usage and costs with JSON persistence."""
+    """Tracks LLM usage patterns with JSON persistence."""
 
     def __init__(self, data_dir: str = "data"):
         self._lock = threading.Lock()
@@ -65,7 +54,7 @@ class UsageTracker:
                 "total_calls": 0,
                 "total_input_tokens": 0,
                 "total_output_tokens": 0,
-                "total_cost": 0.0,
+                "total_cost": 0.0,  # Always 0 for local models
                 "first_tracked": None,
             },
             "daily": {},
@@ -73,13 +62,6 @@ class UsageTracker:
             "commands": {},
             "users": {},
         }
-
-    # ── cost calculation ─────────────────────────────────────────
-
-    @staticmethod
-    def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-        pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
-        return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
     # ── recording ────────────────────────────────────────────────
 
@@ -91,9 +73,10 @@ class UsageTracker:
         output_tokens: int,
         user_id: Optional[str] = None,
         channel_id: Optional[str] = None,
-        is_local: bool = False,
+        is_local: bool = True,  # Default True - local models have no cost
     ):
-        cost = 0.0 if is_local else self.calculate_cost(model, input_tokens, output_tokens)
+        # Local models are free - no cost calculation needed
+        cost = 0.0
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
         with self._lock:
@@ -119,14 +102,14 @@ class UsageTracker:
             day["output_tokens"] += output_tokens
             day["cost"] += cost
 
-            # daily → model
+            # daily -> model
             dm = day["models"].setdefault(model, _empty_bucket())
             dm["calls"] += 1
             dm["input_tokens"] += input_tokens
             dm["output_tokens"] += output_tokens
             dm["cost"] += cost
 
-            # daily → command
+            # daily -> command
             dc = day["commands"].setdefault(command_type, _empty_bucket())
             dc["calls"] += 1
             dc["input_tokens"] += input_tokens
@@ -217,5 +200,5 @@ class UsageTracker:
     def get_user_breakdown(self, top_n: int = 10) -> list:
         with self._lock:
             users = self._data.get("users", {})
-            sorted_users = sorted(users.items(), key=lambda x: x[1].get("cost", 0), reverse=True)
+            sorted_users = sorted(users.items(), key=lambda x: x[1].get("calls", 0), reverse=True)
             return sorted_users[:top_n]

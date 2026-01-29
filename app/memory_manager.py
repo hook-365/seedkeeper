@@ -13,6 +13,7 @@ import asyncio
 from dataclasses import dataclass, asdict
 import hashlib
 from persistence import atomic_json_write
+from input_validator import InputValidator
 
 @dataclass
 class Memory:
@@ -81,6 +82,9 @@ class MemoryManager:
 
     def get_user_file(self, user_id: str) -> Path:
         """Get the memory file path for a user"""
+        # Validate user_id is numeric (Discord snowflake)
+        if not user_id.isdigit():
+            raise ValueError(f"Invalid user_id: {user_id}")
         # Hash the user ID for privacy
         user_hash = hashlib.sha256(user_id.encode()).hexdigest()[:16]
         return self.memory_dir / f"user_{user_id}_{user_hash}.json"
@@ -131,9 +135,12 @@ class MemoryManager:
         if not self.is_memory_enabled(user_id):
             return False
 
+        # Sanitize content before storage
+        safe_content = InputValidator.sanitize_string(content, max_length=2000)
+
         memory = Memory(
             timestamp=datetime.utcnow().isoformat(),
-            content=content[:2000],  # Truncate very long messages
+            content=safe_content,
             author=author,
             channel_type=channel_type,
             guild_id=guild_id,

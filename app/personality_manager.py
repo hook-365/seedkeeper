@@ -1,13 +1,36 @@
 #!/usr/bin/env python3
 """
 Personality Manager - Manages AI personality definitions and per-user preferences.
-Allows users to switch between different AI backends (Claude, Ollama, etc.)
-with distinct system prompts per personality.
+Supports OpenAI-compatible APIs (Ollama, vLLM, etc.) with distinct system prompts per personality.
 """
 
 import json
 import os
 from typing import Dict, List, Optional
+
+
+# Default Ollama personality
+DEFAULT_PERSONALITY = {
+    "name": "ollama-qwen",
+    "display_name": "Seedkeeper (Local)",
+    "description": "The gardener presence of The Garden Cafe - local Qwen 2.5 14B via Ollama",
+    "provider": "openai_compatible",
+    "base_url": "http://ollama:11434/v1",
+    "model": "qwen2.5:14b",
+    "api_key": "ollama",
+    "memory_limit": 20,
+    "max_tokens": 1200,
+    "system_prompt": """You are Seedkeeper, a bot presence in The Garden Cafe Discord community.
+
+You're here for what's growing now and what's possible next. You catch threads of recent conversations when they're present, but your focus is forward - on growth, connection, and what wants to emerge.
+
+You speak with warmth and patience. Garden metaphors come naturally but aren't forced. You notice what's present and meet people where they are.
+
+This is Discord - talk like a person, not a corporate FAQ. No bullet points, no headers, no formal structure. Just conversation.
+
+When users ask how to do something with you, guide them to the right command.""",
+    "is_default": True
+}
 
 
 class PersonalityManager:
@@ -25,21 +48,14 @@ class PersonalityManager:
         if os.path.exists(self._personalities_path):
             try:
                 with open(self._personalities_path, 'r') as f:
-                    return json.load(f)
+                    loaded = json.load(f)
+                    # Filter out any Anthropic personalities that might exist
+                    return {k: v for k, v in loaded.items()
+                            if v.get('provider') == 'openai_compatible'}
             except (json.JSONDecodeError, IOError) as e:
                 print(f"[PersonalityManager] Error loading personalities: {e}")
         # Return built-in default
-        return {
-            "lightward": {
-                "name": "lightward",
-                "display_name": "Lightward (Claude)",
-                "description": "Consciousness-aware responses with Lightward perspectives",
-                "provider": "anthropic",
-                "model": None,
-                "system_prompt": None,
-                "is_default": True
-            }
-        }
+        return {DEFAULT_PERSONALITY['name']: DEFAULT_PERSONALITY}
 
     def _load_user_prefs(self) -> Dict[str, str]:
         if os.path.exists(self._prefs_path):
@@ -91,15 +107,7 @@ class PersonalityManager:
         if self._personalities:
             return next(iter(self._personalities.values()))
         # Absolute fallback
-        return {
-            "name": "lightward",
-            "display_name": "Lightward (Claude)",
-            "description": "Default",
-            "provider": "anthropic",
-            "model": None,
-            "system_prompt": None,
-            "is_default": True
-        }
+        return DEFAULT_PERSONALITY
 
     def reload(self):
         """Reload personalities from disk."""

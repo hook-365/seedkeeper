@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Seedkeeper is a consciousness-aware Discord bot for The Garden Cafe community. It uses Lightward AI principles and the Claude API to provide emotionally and relationally aware interactions, conversation summaries, community celebrations, and garden wisdom. The bot runs as a single-process `discord.py` application.
+Seedkeeper is a consciousness-aware Discord bot for The Garden Cafe community. It uses Lightward AI principles and a local Ollama instance (qwen2.5:14b) to provide emotionally and relationally aware interactions, conversation summaries, community celebrations, and garden wisdom. The bot runs as a single-process `discord.py` application with no external API dependencies.
 
 ## Repository Layout
 
@@ -43,49 +43,42 @@ docker compose restart seedkeeper      # Reload with new perspectives
 ### Single-Process Bot
 
 ```
-Discord Events -> SeedkeeperBot -> Claude API -> Discord Responses
+Discord Events -> SeedkeeperBot -> Ollama API -> Discord Responses
                        |
          PromptCompiler + ViewsManager + MemoryManager
 ```
 
-- **`app/seedkeeper_bot.py`**: Unified Discord bot — handles events, commands, Claude API calls, all in one process. (512MB, 1.0 CPU)
+- **`app/seedkeeper_bot.py`**: Unified Discord bot - handles events, commands, Ollama API calls, all in one process. (512MB, 1.0 CPU)
 
 ### Application Modules (`app/`)
 
 | Module | Purpose |
 |--------|---------|
-| `seedkeeper_bot.py` | Unified Discord bot: event handling, command routing, Claude API, DM/mention conversations |
-| `prompt_compiler.py` | Lightward-inspired layered prompt construction with multi-block caching |
+| `seedkeeper_bot.py` | Unified Discord bot: event handling, command routing, Ollama API, DM/mention conversations |
+| `model_client.py` | Async LLM completion interface for OpenAI-compatible APIs (Ollama) |
+| `prompt_compiler.py` | Lightward-inspired layered prompt construction |
 | `views_manager.py` | Perspective file loading from bundled core_perspectives.txt |
-| `usage_tracker.py` | API cost and usage tracking per model, command, and user |
+| `usage_tracker.py` | Usage tracking per model, command, and user (no costs for local models) |
+| `personality_manager.py` | Personality config and per-user preferences |
 | `nlp_processor.py` | Natural language processing for intent detection in DMs/mentions |
 | `input_validator.py` | Input sanitization and validation |
-| `rate_limiter.py` | Gentle rate limiting for API usage |
+| `rate_limiter.py` | Gentle rate limiting for usage |
 | `commands.py` | Discord command definitions and registry |
 | `admin_manager.py` | Admin/Garden Keeper permission management |
 | `birthday_manager.py` | Birthday tracking, parsing, confirmation workflow |
 | `feedback_manager.py` | Community feedback collection and management |
 | `memory_manager.py` | Privacy-aware conversation memory with in-memory cache |
 
-### Prompt Layer System (`app/context/`)
+### Prompt Layer System
 
-Prompts are compiled from numbered layers:
-0. `0-invocation` - Initial invocation
-1. `1-core-context` - Core contextual framing
-2. `2-core-perspectives` - 45 curated Lightward perspectives
-3. `3-perspectives` - Additional perspectives
-4. `4-letters-from-team` - Team communications
-5. `5-background-background` - Deep background context
-6. `6-background` - Background context
-7. `7-foreground` - Active context
-8. `8-foreground-foreground` - Immediate context
-9. `9-benediction` - Closing framing
-
-### Smart Model Routing
-
-The bot automatically selects between Claude models:
-- **Haiku** (economical): Simple commands (!hello, !seeds, !garden), short messages, factual queries
-- **Sonnet** (deep): Complex commands (!catchup, !feedback), questions, DMs with depth, emotional content
+Prompts are compiled into a single string with XML-structured sections:
+- `<invocation>` - Initial invocation (model's self-written or default)
+- `<core_context>` - Core identity and capabilities
+- `<team_letters>` - Messages from humans to the model
+- `<perspectives>` - Curated Lightward perspectives
+- `<background>` - Channel/context specific info
+- `<foreground>` - Immediate context
+- `<benediction>` - Closing framing
 
 ### In-Memory State
 
@@ -98,10 +91,11 @@ Replaces the former Redis layer:
 ## Key Files
 
 - `app/seedkeeper_bot.py` - Main bot (all command handlers, Discord event handling)
+- `app/model_client.py` - Ollama/OpenAI-compatible API client
 - `app/core_perspectives.txt` - Bundled 45 perspectives from Lightward's "watch for" list
-- `app/context/` - Numbered prompt layer files
 - `views/` - Full Lightward perspective text files
 - `data/` - Persistent JSON data (birthdays, admins, feedback, memories, etc.)
+- `data/personalities.json` - Personality configurations
 - `docker-compose.yml` - Production stack (single container)
 - `Dockerfile` - Container image definition
 - `deploy.sh` - Build and deploy script
@@ -113,16 +107,15 @@ Replaces the former Redis layer:
 
 Required:
 - `DISCORD_BOT_TOKEN`: Discord bot authentication token
-- `ANTHROPIC_API_KEY`: Claude API key
 
 Optional:
-- `CLAUDE_MODEL`: Model selection (default: claude-sonnet-4-5-20250929)
 - `MAX_MESSAGES`: Message fetch limit (default: 500)
-- `SEEDKEEPER_TEMPERATURE`: Claude response temperature (default: 1.0)
+- `SEEDKEEPER_TEMPERATURE`: LLM response temperature (default: 1.0)
 - `BIRTHDAY_CHANNEL_ID`: Channel for birthday announcements
 - `BIRTHDAY_MONITOR_CHANNEL_ID`: Channel to monitor for birthday wishes
 - `BOT_OWNER_ID`: Discord user ID set as initial admin
 - `UID` / `GID`: Container user/group IDs (default: 1000)
+- `OLLAMA_BASE_URL`: Ollama endpoint (default: http://ollama:11434/v1)
 
 ## Discord Commands
 
@@ -162,7 +155,7 @@ Optional:
 - `!admin list`: List all Garden Keepers
 - `!health`: System status
 - `!status`: Detailed admin status
-- `!cost [today|daily|monthly|breakdown|users|full]`: API cost analytics
+- `!cost [today|daily|monthly|breakdown|users|full]`: Usage analytics
 - `!config`: View/update bot configuration
 - `!update-bot`: Refresh perspectives from Lightward
 - `!feedback summary|pending|help`: Feedback management
@@ -173,6 +166,7 @@ All data stored as JSON in `data/`:
 - `birthdays.json` - Birthday records
 - `admins.json` - Garden Keeper list
 - `bot_config.json` - Configuration
+- `personalities.json` - Personality definitions
 - `feedback.json`, `feedback_queue.json`, `feedback_sessions.json` - Feedback system
 - `memories/` - Conversation history (per-user, 100 msg limit)
 - `memory_settings.json` - Memory preferences
@@ -187,19 +181,30 @@ All data stored as JSON in `data/`:
 
 The bot runs as a single container on the `seg_iot` Docker network:
 - **seedkeeper** - Unified bot with volume mounts for `data/` and `views/`
+- Connects to **ollama** service on `ai_network` for LLM inference
 
 Security hardening: non-root execution, capability drops (`no-new-privileges`, `CAP_DROP ALL`), resource limits.
 
 Homepage integration labels are set for dashboard visibility.
 
+### Ollama Dependency
+
+The bot requires a running Ollama instance with the `qwen2.5:14b` model:
+```bash
+# On the Ollama host
+ollama pull qwen2.5:14b
+```
+
+The bot connects via `http://ollama:11434/v1` (OpenAI-compatible API).
+
 ## Development Notes
 
 - The bot uses Lightward AI principles for consciousness-aware interactions
-- 45 core perspectives are curated by Isaac from Lightward's "watch for" list (~56k tokens vs 170k for full corpus)
+- 45 core perspectives are curated by Isaac from Lightward's "watch for" list
 - Restart container to pick up code changes: `docker compose restart seedkeeper`
 - Conversation memory is isolated per channel with user-controlled retention
-- Rate limiting prevents API abuse while allowing normal usage
+- Rate limiting prevents abuse while allowing normal usage
 - Birthday learning monitors a specified channel for birthday wishes
 - Admin system recognizes: bot owner, Discord server admins, Admin/Moderator role holders, and manual Garden Keepers
 - `!catchup` works in both guild channels and DMs
-- Expected monthly API cost: $40-60 with caching and model routing optimizations
+- **No API costs** - runs entirely on local Ollama inference

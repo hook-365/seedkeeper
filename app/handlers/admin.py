@@ -118,7 +118,8 @@ class AdminHandler:
             await self.bot.send_message(channel_id, config_msg, is_dm=is_dm, author_id=str(author_id))
 
         elif len(args) == 1:
-            key = args[0]
+            # Convert spaces to underscores so users can type what they see
+            key = args[0].lower().replace(' ', '_')
             current = self.bot.admin_manager.get_config(key)
             if current is not None:
                 await self.bot.send_message(channel_id, f"**{key}**: {current}",
@@ -127,8 +128,25 @@ class AdminHandler:
                 await self.bot.send_message(channel_id, f"Configuration key '{key}' not found.",
                     is_dm=is_dm, author_id=str(author_id))
         else:
-            key = args[0]
-            value = args[1]
+            # Parse key and value - handle multi-word keys by finding the value at the end
+            full_args = command_data.get('args', '').strip()
+            # Check for boolean values at the end
+            value = None
+            for bool_val in ['true', 'false', 'yes', 'no', 'on', 'off']:
+                if full_args.lower().endswith(' ' + bool_val):
+                    value = full_args.split()[-1]
+                    key = full_args[:-(len(value) + 1)].lower().replace(' ', '_')
+                    break
+            # Check for numeric values at the end
+            if value is None:
+                parts = full_args.rsplit(' ', 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    key = parts[0].lower().replace(' ', '_')
+                    value = parts[1]
+                else:
+                    # Fall back to original parsing
+                    key = args[0].lower().replace(' ', '_')
+                    value = args[1]
             if value.lower() in ['true', 'yes', 'on']:
                 value = True
             elif value.lower() in ['false', 'no', 'off']:

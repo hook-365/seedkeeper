@@ -20,11 +20,10 @@ class CatchupHandler:
 
         if not args:
             await self.bot.send_message(channel_id,
-                "📚 **Catchup Command**\n\n"
-                "Usage: `!catchup [message_link] [optional_focus]`\n\n"
-                "I'll summarize the conversation from that message onwards.\n\n"
-                "Example: `!catchup https://discord.com/channels/...`\n"
-                "With focus: `!catchup [link] consciousness`",
+                "**Catchup**\n\n"
+                "Usage: `!catchup [message_link] [optional focus]`\n\n"
+                "I'll fill you in on what happened since that message.\n\n"
+                "Example: `!catchup https://discord.com/channels/...`",
                 is_dm=is_dm, author_id=author_id)
             return
 
@@ -39,7 +38,7 @@ class CatchupHandler:
 
         if not match:
             await self.bot.send_message(channel_id,
-                "❌ Invalid message link format. Please use a Discord message URL.",
+                "That doesn't look like a Discord message link. Right-click a message and 'Copy Message Link'.",
                 is_dm=is_dm, author_id=author_id)
             return
 
@@ -49,7 +48,7 @@ class CatchupHandler:
         guild_id = command_data.get('guild_id')
         if not is_dm and guild_id != link_guild_id:
             await self.bot.send_message(channel_id,
-                "❌ You can only catch up on conversations from this server.",
+                "I can only catch you up on conversations from this server.",
                 is_dm=is_dm, author_id=author_id)
             return
 
@@ -72,7 +71,7 @@ class CatchupHandler:
             target_channel = self.bot.get_channel(int(link_channel_id))
             if not target_channel:
                 await self.bot.send_message(channel_id,
-                    "❌ Could not access that channel.",
+                    "I can't access that channel.",
                     is_dm=is_dm, author_id=author_id)
                 return
 
@@ -97,7 +96,7 @@ class CatchupHandler:
 
             if not messages:
                 await self.bot.send_message(channel_id,
-                    "No messages found after that point.",
+                    "No messages since then - you're all caught up!",
                     is_dm=is_dm, author_id=author_id)
                 return
 
@@ -112,97 +111,61 @@ class CatchupHandler:
         except Exception as e:
             print(f"Error in catchup: {e}")
             await self.bot.send_message(channel_id,
-                f"❌ Error fetching messages: {e}",
+                f"Something went wrong fetching those messages: {e}",
                 is_dm=is_dm, author_id=author_id)
 
     async def _generate_catchup_summary(self, messages: List[Dict], focus: Optional[str] = None,
                                         channel_topic: Optional[str] = None,
                                         author_id: Optional[str] = None,
                                         channel_id: Optional[str] = None) -> str:
-        """Generate conversation summary using Claude."""
-        if not self.bot.anthropic:
-            return "❌ Claude API not configured"
-
+        """Generate conversation summary."""
         # Format messages for summary
         conversation_text = ""
         for msg in messages:
-            timestamp = msg.get('timestamp', '')
             author = msg.get('author', 'Unknown')
             content = msg.get('content', '')
             if content:
-                conversation_text += f"[{timestamp}] {author}: {content}\n"
+                conversation_text += f"{author}: {content}\n"
 
-        channel_context = f"This channel's topic: {channel_topic}\n\n" if channel_topic else ""
+        # Truncate if needed
+        if len(conversation_text) > 6000:
+            conversation_text = conversation_text[:6000] + "\n[...conversation continues...]"
+
+        channel_context = f"(Channel topic: {channel_topic})\n\n" if channel_topic else ""
 
         if focus:
-            prompt = f"""{channel_context}A community member returns and needs to catch up on what they missed, particularly about: {focus}
+            prompt = f"""{channel_context}Someone missed this conversation and wants to catch up, especially about: {focus}
 
-Please provide a practical summary with:
-- Key topics discussed (as bullet points)
-- Who talked about what (mention specific users)
-- Any important decisions or outcomes
-- Notable moments or highlights
-
-Keep it conversational but informative - help them quickly understand what happened.
+Fill them in naturally - what happened, who said what, anything important. Be conversational, like you're telling a friend what they missed. Don't use rigid headers or bullet points unless it really helps.
 
 The conversation:
-{conversation_text[:4000]}"""
+{conversation_text}"""
         else:
-            prompt = f"""{channel_context}A community member returns and needs to catch up on what they missed.
+            prompt = f"""{channel_context}Someone missed this conversation and wants to catch up.
 
-Please provide a practical summary with:
-- Key topics discussed (as bullet points)
-- Who talked about what (mention specific users)
-- Any important decisions or outcomes
-- Notable moments or highlights
-
-Keep it conversational but informative - help them quickly understand what happened.
+Fill them in naturally - what happened, who said what, anything notable or important. Be conversational, like you're telling a friend what they missed. Keep it digestible.
 
 The conversation:
-{conversation_text[:4000]}"""
+{conversation_text}"""
 
         try:
-            catchup_system = """You are Seedkeeper, helping community members catch up on conversations they missed.
+            personality = self.bot.personality_manager.get_user_personality(str(author_id))
+            system = self.bot._get_system_for_personality(personality, is_dm=False)
 
-Your role is to provide clear, practical summaries that help people quickly understand:
-- Who was involved in the conversation
-- What topics were discussed
-- Any important decisions or outcomes
-- The overall mood and highlights
-
-Be warm and conversational, but focus on being genuinely helpful rather than philosophical.
-Use bullet points for clarity. Mention specific usernames when relevant.
-Think of yourself as a friendly community member who took notes for someone who stepped away."""
-
-            system_messages = self.bot._create_system_messages(is_dm=False)
-            system_messages[0]["text"] = catchup_system
-
-            catchup_personality = self.bot.personality_manager.get_default()
             result = await self.bot.model_client.complete(
-                personality=catchup_personality,
-                system=system_messages,
+                personality=personality,
+                system=system,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=800,
+                max_tokens=600,
                 temperature=0.7,
-                model_override="claude-sonnet-4-5-20250929",
             )
             self.bot._record_api_usage_from_result(result, "catchup",
                                                    user_id=author_id, channel_id=channel_id)
-            summary = result.text
 
-            header = "🌱 **Conversation Catchup**\n\n"
-            if focus:
-                header += f"*Focusing on: {focus}*\n\n"
-            footer = f"\n\n*Caught up on {len(messages)} messages*"
-
-            return header + summary + footer
+            footer = f"\n\n*{len(messages)} messages*"
+            return result.text + footer
 
         except Exception as e:
-            print(f"Error calling Claude API: {e}")
-            lines = conversation_text.split('\n')
-            participants = set()
-            for line in lines:
-                if ': ' in line:
-                    author = line.split(': ')[0].split('] ')[-1]
-                    participants.add(author)
-            return f"Conversation with {len(participants)} participants and {len(messages)} messages. Unable to generate detailed summary."
+            print(f"Error generating summary: {e}")
+            participants = set(msg.get('author', 'Unknown') for msg in messages if msg.get('content'))
+            return f"Couldn't generate a summary, but there were {len(messages)} messages from {', '.join(list(participants)[:5])}."

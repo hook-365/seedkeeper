@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Seedkeeper Bot - Unified Discord bot for The Garden Cafe
-Single-process architecture: direct Discord connection with Claude API
-No Redis, no worker queue - just pure bot love
+Single-process architecture: direct Discord connection with local Ollama API
+No Redis, no external APIs - just pure bot love
 """
 
 import asyncio
@@ -29,7 +29,7 @@ from feedback_manager import FeedbackManager
 from personality_manager import PersonalityManager
 from model_client import ModelClient
 from rate_limiter import RateLimiter
-from commands import COMMANDS, resolve_command
+from commands import COMMANDS, resolve_command, generate_commands_reference
 from handlers import (
     GardenHandler, ConversationHandler, CatchupHandler,
     BirthdayHandler, MemoryHandler, AdminHandler,
@@ -41,24 +41,15 @@ load_dotenv()
 
 # Configuration
 DISCORD_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
-ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY')
 BOT_OWNER_ID = os.getenv('BOT_OWNER_ID')
 
 if not DISCORD_TOKEN:
     print("DISCORD_BOT_TOKEN not set in environment")
     exit(1)
 
-# Import Anthropic (async client)
-try:
-    import anthropic
-    anthropic_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-except ImportError:
-    print("Anthropic not installed: pip install anthropic")
-    anthropic_client = None
-
 
 class SeedkeeperBot(commands.Bot):
-    """Unified Seedkeeper bot - single-process Discord connection with Claude API"""
+    """Unified Seedkeeper bot - single-process Discord connection with local Ollama API"""
 
     def __init__(self):
         intents = discord.Intents.default()
@@ -68,9 +59,6 @@ class SeedkeeperBot(commands.Bot):
         intents.members = True
         intents.guilds = True
         super().__init__(command_prefix='!', intents=intents)
-
-        # Claude API
-        self.anthropic = anthropic_client
 
         # Prompt compiler
         self.prompt_compiler = PromptCompiler()
@@ -87,7 +75,7 @@ class SeedkeeperBot(commands.Bot):
         self.nlp_processor = NLPProcessor()
         self.usage_tracker = UsageTracker('data')
         self.personality_manager = PersonalityManager('data')
-        self.model_client = ModelClient(anthropic_client)
+        self.model_client = ModelClient()
         self.rate_limiter = RateLimiter('data')
 
         # Set initial owner
@@ -162,17 +150,41 @@ class SeedkeeperBot(commands.Bot):
 
     # ── Helpers ──────────────────────────────────────────────────
 
-    def _get_guild_members(self, guild_id: int) -> List[Dict]:
-        """Get guild members as dict list"""
+    async def _get_guild_members(self, guild_id) -> List[Dict]:
+        """Get guild members as dict list, always fetching from API"""
+        if not guild_id:
+            print("[Guild] No guild_id provided")
+            return []
+
         guild = self.get_guild(int(guild_id))
         if not guild:
+            print(f"[Guild] Could not find guild {guild_id}")
             return []
-        return [{
-            'id': str(m.id),
-            'name': m.name,
-            'nick': m.nick or '',
-            'display_name': m.display_name
-        } for m in guild.members if not m.bot]
+
+        # Always fetch members from API (requires members intent)
+        try:
+            members = []
+            async for member in guild.fetch_members(limit=None):
+                if not member.bot:
+                    members.append({
+                        'id': str(member.id),
+                        'name': member.name,
+                        'nick': member.nick or '',
+                        'display_name': member.display_name
+                    })
+            print(f"[Guild] Fetched {len(members)} members from {guild.name}")
+            return members
+        except Exception as e:
+            print(f"[Guild] Error fetching members: {e}")
+            # Fall back to cached members
+            cached = [{
+                'id': str(m.id),
+                'name': m.name,
+                'nick': m.nick or '',
+                'display_name': m.display_name
+            } for m in guild.members if not m.bot]
+            print(f"[Guild] Falling back to {len(cached)} cached members")
+            return cached
 
     def _get_random_perspectives(self, count: int = 2) -> List[str]:
         """Get random perspectives using ViewsManager"""
@@ -189,7 +201,7 @@ class SeedkeeperBot(commands.Bot):
         print(f'Seedkeeper Online: {self.user}')
         print(f'Connected to {len(self.guilds)} guilds')
         print(f'User ID: {self.user.id}')
-        print(f'Single-process architecture (no Redis)')
+        print(f'Local Ollama architecture (no external APIs)')
 
         for guild in self.guilds:
             print(f'  - Guild: {guild.name} (ID: {guild.id})')
@@ -357,65 +369,25 @@ class SeedkeeperBot(commands.Bot):
             async with channel.typing():
                 await asyncio.sleep(duration)
 
-    # ── Model selection ──────────────────────────────────────────
-
-    def _select_model(self, message_content: str, is_dm: bool = False,
-                       is_command: bool = False) -> str:
-        """Select appropriate model based on interaction complexity."""
-        # Content-based heuristics for conversations
-        word_count = len(message_content.split())
-
-        if word_count < 10:
-            if '?' in message_content:
-                return 'claude-sonnet-4-5-20250929'
-            return 'claude-haiku-4-5-20251001'
-
-        if is_dm and word_count > 15:
-            return 'claude-sonnet-4-5-20250929'
-
-        depth_indicators = ['?', 'how', 'why', 'what if', 'help me', 'i feel', 'i am', "i'm", 'tell me about']
-        if any(indicator in message_content.lower() for indicator in depth_indicators):
-            return 'claude-sonnet-4-5-20250929'
-
-        return 'claude-haiku-4-5-20251001'
-
     # ── System prompts ───────────────────────────────────────────
 
-    def _get_system_for_personality(self, personality: dict, **kwargs):
-        """Get system prompt appropriate for the personality's provider."""
-        if personality['provider'] == 'anthropic':
-            return self._create_system_messages(**kwargs)
-        else:
-            return personality.get('system_prompt', 'You are a helpful assistant.')
+    def _get_system_for_personality(self, personality: dict, **kwargs) -> str:
+        """Get system prompt for the personality with dynamic injections."""
+        # Start with personality's base prompt
+        base_prompt = personality.get('system_prompt', 'You are a helpful assistant.')
 
-    def _create_system_messages(self, channel_topic: Optional[str] = None, is_dm: bool = False) -> list:
-        """Create layered system messages for multi-block caching"""
-        background_context = {}
+        # Inject auto-generated commands reference
+        commands_ref = generate_commands_reference()
+        full_prompt = f"{base_prompt}\n\n{commands_ref}"
+
+        # Add channel context if available
+        channel_topic = kwargs.get('channel_topic')
         if channel_topic:
-            background_context['channel_topic'] = channel_topic
+            full_prompt += f"\n\nCurrent channel topic: {channel_topic}"
 
-        return self.prompt_compiler.compile_messages(
-            background_context=background_context,
-            foreground_context=None
-        )
+        return full_prompt
 
     # ── Usage tracking ───────────────────────────────────────────
-
-    def _record_api_usage(self, response, model: str, command_type: str,
-                          user_id: Optional[str] = None, channel_id: Optional[str] = None):
-        """Record API usage from a Claude response"""
-        try:
-            usage = response.usage
-            self.usage_tracker.record_usage(
-                model=model,
-                command_type=command_type,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                user_id=user_id,
-                channel_id=channel_id,
-            )
-        except Exception as e:
-            print(f"[UsageTracker] Failed to record usage: {e}")
 
     def _record_api_usage_from_result(self, result, command_type: str,
                                       user_id: Optional[str] = None, channel_id: Optional[str] = None):
@@ -454,7 +426,7 @@ class SeedkeeperBot(commands.Bot):
         # Check admin permissions
         if cmd_info.admin_only and not self.admin_manager.is_admin(str(author_id)):
             await self.send_message(channel_id,
-                "🚫 You need Garden Keeper permissions for that command.",
+                "You need Garden Keeper permissions for that command.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
