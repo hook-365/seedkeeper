@@ -18,7 +18,7 @@ class FeedbackHandler:
         # Admin commands respond in the same channel
         if self.bot.admin_manager.is_admin(author_id) and args in ['summary', 'pending', 'get', 'help']:
             if args == 'help':
-                help_text = """**Admin Feedback Commands**
+                help_text = """🌱 **Admin Feedback Commands**
 
 **Available commands:**
 - `!feedback pending` - Get all unread feedback
@@ -79,7 +79,7 @@ class FeedbackHandler:
         # Regular feedback -- redirect to DMs
         if not is_dm:
             await self.bot.send_message(channel_id,
-                "I've sent you a DM to collect your feedback privately!",
+                "🌱 I've sent you a DM to collect your feedback privately!",
                 is_dm=False, author_id=author_id)
             is_dm = True
 
@@ -88,12 +88,12 @@ class FeedbackHandler:
 
         if not result['success']:
             await self.bot.send_message(channel_id,
-                result['message'],
+                f"🌿 {result['message']}",
                 is_dm=is_dm, author_id=author_id)
             return
 
         feature = result['feature']
-        prompt = f"""**Garden Feature Feedback Session**
+        prompt = f"""🌱 **Garden Feature Feedback Session**
 
 Welcome! I'd love to hear your thoughts on potential features for The Garden Cafe.
 
@@ -103,7 +103,7 @@ Welcome! I'd love to hear your thoughts on potential features for The Garden Caf
 3. Optionally, tell me what aspects would be valuable
 4. Choose whether to share anonymously with development
 
-**Today's feature idea:**
+💡 **Today's feature idea:**
 **"{feature}"**
 
 **What do you think?** Would this be interesting or useful to you?

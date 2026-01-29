@@ -29,7 +29,7 @@ from feedback_manager import FeedbackManager
 from personality_manager import PersonalityManager
 from model_client import ModelClient
 from rate_limiter import RateLimiter
-from commands import COMMANDS, resolve_command, get_model_for_command, format_commands_text
+from commands import COMMANDS, resolve_command
 from handlers import (
     GardenHandler, ConversationHandler, CatchupHandler,
     BirthdayHandler, MemoryHandler, AdminHandler,
@@ -361,19 +361,8 @@ class SeedkeeperBot(commands.Bot):
     # ── Model selection ──────────────────────────────────────────
 
     def _select_model(self, message_content: str, is_dm: bool = False,
-                       is_command: bool = False, command_name: str = None) -> str:
-        """
-        Select appropriate model based on interaction complexity.
-
-        If a command_name is provided and the registry specifies a model_tier,
-        use that directly. Otherwise fall through to content heuristics.
-        """
-        # Check registry first
-        if command_name:
-            model = get_model_for_command(command_name)
-            if model:
-                return model
-
+                       is_command: bool = False) -> str:
+        """Select appropriate model based on interaction complexity."""
         # Content-based heuristics for conversations
         word_count = len(message_content.split())
 
@@ -466,7 +455,7 @@ class SeedkeeperBot(commands.Bot):
         # Check admin permissions
         if cmd_info.admin_only and not self.admin_manager.is_admin(str(author_id)):
             await self.send_message(channel_id,
-                "You need Garden Keeper permissions for that command.",
+                "🚫 You need Garden Keeper permissions for that command.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 

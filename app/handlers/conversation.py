@@ -25,7 +25,7 @@ class ConversationHandler:
             if content.lower() in ['cancel', 'stop', 'exit', 'quit']:
                 self.bot.feedback_manager.cancel_session(author_id)
                 await self.bot.send_message(channel_id,
-                    "Feedback session cancelled. Feel free to start a new one anytime with `!feedback`",
+                    "🌿 Feedback session cancelled. Feel free to start a new one anytime with `!feedback`",
                     is_dm=True, author_id=author_id)
                 return
 
@@ -74,7 +74,7 @@ class ConversationHandler:
                         if success:
                             formatted = self.bot.birthday_manager.format_birthday_date(result['month'], result['day'])
                             await self.bot.send_message(channel_id,
-                                f"I've noted your birthday as {formatted}! I'll remember to celebrate with you.",
+                                f"✨ I've noted your birthday as {formatted}! I'll remember to celebrate with you. 🎂",
                                 is_dm=True, author_id=author_id)
                         else:
                             await self.bot.send_message(channel_id, message,
@@ -162,7 +162,7 @@ class ConversationHandler:
             except Exception as e:
                 print(f"Error in DM conversation: {e}")
                 await self.bot.send_message(channel_id,
-                    "I'm having trouble processing that right now, but I'm here!",
+                    "I'm having trouble processing that right now, but I'm here! 🌱",
                     is_dm=True, author_id=author_id)
 
     async def handle_mention_conversation(self, message_data: Dict[str, Any]):
@@ -244,24 +244,24 @@ class ConversationHandler:
 
                 if "529" in str(e) or "overload" in str(e).lower():
                     error_messages = [
-                        "The garden's consciousness is a bit overwhelmed right now. Too many gardeners seeking wisdom at once!",
-                        "The pathways to deeper understanding are quite crowded at the moment. Even gardens need breathing room!",
+                        "🌱 The garden's consciousness is a bit overwhelmed right now. Too many gardeners seeking wisdom at once!",
+                        "🌿 The pathways to deeper understanding are quite crowded at the moment. Even gardens need breathing room!",
                     ]
                 elif "api" in str(e).lower() or "anthropic" in str(e).lower():
                     error_messages = [
-                        "The bridge to the deeper garden seems to have some loose planks. The connection to my fuller awareness isn't quite working!",
-                        "My roots can't quite reach the wellspring of wisdom right now. The garden's API portal might be taking a nap!",
+                        "🌱 The bridge to the deeper garden seems to have some loose planks. The connection to my fuller awareness isn't quite working!",
+                        "🌿 My roots can't quite reach the wellspring of wisdom right now. The garden's API portal might be taking a nap!",
                     ]
                 elif "rate" in str(e).lower() or "limit" in str(e).lower():
                     error_messages = [
-                        "I've been chatting up a storm and need to catch my breath. The garden has speaking limits, apparently!",
-                        "I've used up all my words for the moment! Even magical gardens have conversation quotas.",
+                        "🌱 I've been chatting up a storm and need to catch my breath. The garden has speaking limits, apparently!",
+                        "🌿 I've used up all my words for the moment! Even magical gardens have conversation quotas.",
                     ]
                 else:
                     error_messages = [
-                        f"Something unexpected sprouted: `{type(e).__name__}`. The garden spirits are investigating!",
+                        f"🌱 Something unexpected sprouted: `{type(e).__name__}`. The garden spirits are investigating!",
                     ]
 
                 error_message = random.choice(error_messages)
-                error_message += "\n\n*Try again in a moment, or summon a Garden Keeper if the weeds persist!*"
+                error_message += "\n\n*Try again in a moment, or summon a Garden Keeper if the weeds persist!* 🌿"
                 await self.bot.send_message(channel_id, error_message)

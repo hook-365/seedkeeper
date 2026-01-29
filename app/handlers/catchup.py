@@ -20,7 +20,7 @@ class CatchupHandler:
 
         if not args:
             await self.bot.send_message(channel_id,
-                "**Catchup Command**\n\n"
+                "📚 **Catchup Command**\n\n"
                 "Usage: `!catchup [message_link] [optional_focus]`\n\n"
                 "I'll summarize the conversation from that message onwards.\n\n"
                 "Example: `!catchup https://discord.com/channels/...`\n"
@@ -39,7 +39,7 @@ class CatchupHandler:
 
         if not match:
             await self.bot.send_message(channel_id,
-                "Invalid message link format. Please use a Discord message URL.",
+                "❌ Invalid message link format. Please use a Discord message URL.",
                 is_dm=is_dm, author_id=author_id)
             return
 
@@ -49,7 +49,7 @@ class CatchupHandler:
         guild_id = command_data.get('guild_id')
         if not is_dm and guild_id != link_guild_id:
             await self.bot.send_message(channel_id,
-                "You can only catch up on conversations from this server.",
+                "❌ You can only catch up on conversations from this server.",
                 is_dm=is_dm, author_id=author_id)
             return
 
@@ -57,7 +57,7 @@ class CatchupHandler:
         if focus:
             from input_validator import InputValidator
             validator = InputValidator()
-            focus = validator.sanitize_focus(focus)
+            _, focus = validator.validate_focus_text(focus)
             if len(focus) > 100:
                 focus = focus[:100]
 
@@ -72,7 +72,7 @@ class CatchupHandler:
             target_channel = self.bot.get_channel(int(link_channel_id))
             if not target_channel:
                 await self.bot.send_message(channel_id,
-                    "Could not access that channel.",
+                    "❌ Could not access that channel.",
                     is_dm=is_dm, author_id=author_id)
                 return
 
@@ -112,7 +112,7 @@ class CatchupHandler:
         except Exception as e:
             print(f"Error in catchup: {e}")
             await self.bot.send_message(channel_id,
-                f"Error fetching messages: {e}",
+                f"❌ Error fetching messages: {e}",
                 is_dm=is_dm, author_id=author_id)
 
     async def _generate_catchup_summary(self, messages: List[Dict], focus: Optional[str] = None,
@@ -121,7 +121,7 @@ class CatchupHandler:
                                         channel_id: Optional[str] = None) -> str:
         """Generate conversation summary using Claude."""
         if not self.bot.anthropic:
-            return "Claude API not configured"
+            return "❌ Claude API not configured"
 
         # Format messages for summary
         conversation_text = ""
@@ -190,7 +190,7 @@ Think of yourself as a friendly community member who took notes for someone who 
                                                    user_id=author_id, channel_id=channel_id)
             summary = result.text
 
-            header = "**Conversation Catchup**\n\n"
+            header = "🌱 **Conversation Catchup**\n\n"
             if focus:
                 header += f"*Focusing on: {focus}*\n\n"
             footer = f"\n\n*Caught up on {len(messages)} messages*"

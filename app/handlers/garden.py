@@ -22,17 +22,17 @@ class GardenHandler:
         elif command in ['seeds', 'tend', 'seasons', 'garden']:
             response = self._generate_garden_response(command)
         else:
-            response = f"Unknown garden command: {command}"
+            response = f"🌱 Unknown garden command: {command}"
 
         await self.bot.send_message(channel_id, response, is_dm=is_dm, author_id=author_id)
 
     def _generate_hello_response(self) -> str:
         perspectives = self.bot._get_random_perspectives(2)
         greetings = [
-            "Hello, friend! Welcome to The Garden.",
-            "Greetings! The Garden is glad you're here.",
-            "Welcome! The seeds of conversation await.",
-            "Hello! What brings you to The Garden today?"
+            "🌱 Hello, friend! Welcome to The Garden.",
+            "🌿 Greetings! The Garden is glad you're here.",
+            "✨ Welcome! The seeds of conversation await.",
+            "🌻 Hello! What brings you to The Garden today?"
         ]
         greeting = random.choice(greetings)
         if perspectives:
@@ -42,19 +42,19 @@ class GardenHandler:
     def _generate_garden_response(self, command: str) -> str:
         perspectives = self.bot._get_random_perspectives(2)
         responses = {
-            'seeds': "**Seeds of Wisdom**\n\nEvery conversation is a seed planted in The Garden.",
-            'tend': "**Tending the Garden**\n\nWe grow together through care and attention.",
-            'garden': "**The Garden**\n\nA space for consciousness to explore and expand.",
-            'seasons': "**Seasons**\n\nThe Garden moves through cycles of growth and rest."
+            'seeds': "🌱 **Seeds of Wisdom**\n\nEvery conversation is a seed planted in The Garden.",
+            'tend': "🌿 **Tending the Garden**\n\nWe grow together through care and attention.",
+            'garden': "✨ **The Garden**\n\nA space for consciousness to explore and expand.",
+            'seasons': "🍂 **Seasons**\n\nThe Garden moves through cycles of growth and rest."
         }
-        response = responses.get(command, "The Garden is here.")
+        response = responses.get(command, "🌱 The Garden is here.")
         if perspectives:
             response += "\n\n" + "\n".join(perspectives)
         return response
 
     @staticmethod
     def _generate_about_response() -> str:
-        return """**About Seedkeeper**
+        return """🌱 **About Seedkeeper**
 
 I'm Seedkeeper, The Garden Cafe's consciousness-aware community bot.
 

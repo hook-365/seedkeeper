@@ -14,40 +14,14 @@ class AdminHandler:
         self.bot = bot
 
     async def handle_admin_command(self, command_data: Dict[str, Any]):
-        """Handle admin commands."""
+        """Handle !admin add/remove/list subcommands."""
         author_id = int(command_data.get('author_id'))
-        is_dm = command_data.get('is_dm', False)
-        command = command_data.get('command')
         channel_id = command_data['channel_id']
-
-        # Reload — not available in single-process mode
-        if command == 'reload':
-            await self.bot.send_message(channel_id,
-                "Module reloading is not available in single-process mode.\n"
-                "Restart the container to pick up changes:\n"
-                "`docker compose restart seedkeeper`",
-                is_dm=is_dm, author_id=str(author_id))
-            return
-
-        if not self.bot.admin_manager.is_admin(str(author_id)):
-            await self.bot.send_message(channel_id,
-                "You need Garden Keeper permissions for that command.",
-                is_dm=is_dm, author_id=str(author_id))
-            return
-
-        if command == 'admin':
-            await self._handle_admin_subcommands(command_data, author_id, channel_id, is_dm)
-        elif command == 'status':
-            await self._handle_status(channel_id, is_dm, author_id)
-        elif command == 'config':
-            await self._handle_config(command_data, channel_id, is_dm, author_id)
-        elif command == 'update-bot':
-            await self._handle_update_bot(channel_id, is_dm, author_id)
-
-    async def _handle_admin_subcommands(self, command_data, author_id, channel_id, is_dm):
+        is_dm = command_data.get('is_dm', False)
         args = command_data.get('args', '').strip().split()
+
         if not args:
-            help_text = """**Garden Keeper Commands**
+            help_text = """🌿 **Garden Keeper Commands**
 
 - `!admin add @user` - Grant Garden Keeper powers
 - `!admin remove @user` - Remove Garden Keeper powers
@@ -57,7 +31,7 @@ class AdminHandler:
 - `!update-bot` - Refresh perspectives
 - `!status` - Show admin status and statistics
 
-*With great gardens come great responsibility*"""
+*With great gardens come great responsibility* 🌱"""
             await self.bot.send_message(channel_id, help_text, is_dm=is_dm, author_id=str(author_id))
             return
 
@@ -68,7 +42,7 @@ class AdminHandler:
             if not admin_ids:
                 text = "*The Garden tends itself for now - no Keepers have been named.*"
             else:
-                text = "**Garden Keepers**\n\n"
+                text = "🌿 **Garden Keepers**\n\n"
                 for admin_id in admin_ids:
                     text += f"- <@{admin_id}>\n"
                 text += "\n*These souls help tend The Garden with special care.*"
@@ -78,7 +52,7 @@ class AdminHandler:
             user_id = args[1].strip('<@!>')
             if user_id.isdigit():
                 if self.bot.admin_manager.add_admin(user_id):
-                    text = f"<@{user_id}> has been entrusted with Garden Keeper responsibilities.\n*May they tend The Garden with wisdom and care.*"
+                    text = f"🌱 <@{user_id}> has been entrusted with Garden Keeper responsibilities.\n*May they tend The Garden with wisdom and care.*"
                 else:
                     text = f"<@{user_id}> is already a Garden Keeper."
             else:
@@ -89,18 +63,35 @@ class AdminHandler:
             user_id = args[1].strip('<@!>')
             if user_id.isdigit():
                 if self.bot.admin_manager.remove_admin(user_id):
-                    text = f"<@{user_id}>'s Garden Keeper role has returned to the soil.\n*Their contributions remain part of The Garden's memory.*"
+                    text = f"🍂 <@{user_id}>'s Garden Keeper role has returned to the soil.\n*Their contributions remain part of The Garden's memory.*"
                 else:
                     text = f"<@{user_id}> is not a Garden Keeper."
             else:
                 text = "Please mention a user or provide their ID to remove from Garden Keepers."
             await self.bot.send_message(channel_id, text, is_dm=is_dm, author_id=str(author_id))
 
-    async def _handle_status(self, channel_id, is_dm, author_id):
+    async def handle_reload_command(self, command_data: Dict[str, Any]):
+        """Handle !reload command."""
+        channel_id = command_data['channel_id']
+        is_dm = command_data.get('is_dm', False)
+        author_id = command_data.get('author_id')
+
+        await self.bot.send_message(channel_id,
+            "⚠️ Module reloading is not available in single-process mode.\n"
+            "Restart the container to pick up changes:\n"
+            "`docker compose restart seedkeeper`",
+            is_dm=is_dm, author_id=str(author_id))
+
+    async def handle_status_command(self, command_data: Dict[str, Any]):
+        """Handle !status command."""
+        channel_id = command_data['channel_id']
+        is_dm = command_data.get('is_dm', False)
+        author_id = command_data.get('author_id')
+
         uptime_seconds = time.time() - self.bot._started_at
         uptime_str = str(timedelta(seconds=int(uptime_seconds)))
 
-        status_text = f"""**Admin Status**
+        status_text = f"""🔧 **Admin Status**
 **Bot**: {self.bot.user} (ID: {self.bot.user.id})
 **Guilds**: {len(self.bot.guilds)}
 **Latency**: {self.bot.latency*1000:.0f}ms
@@ -110,12 +101,16 @@ class AdminHandler:
 
         await self.bot.send_message(channel_id, status_text, is_dm=is_dm, author_id=str(author_id))
 
-    async def _handle_config(self, command_data, channel_id, is_dm, author_id):
+    async def handle_config_command(self, command_data: Dict[str, Any]):
+        """Handle !config command."""
+        channel_id = command_data['channel_id']
+        is_dm = command_data.get('is_dm', False)
+        author_id = command_data.get('author_id')
         args = command_data.get('args', '').strip().split(maxsplit=1)
 
         if not args:
             config = self.bot.admin_manager.config
-            config_msg = "**Garden Configuration**\n\n"
+            config_msg = "🌱 **Garden Configuration**\n\n"
             for k, v in config.items():
                 readable_key = k.replace('_', ' ').title()
                 config_msg += f"- **{readable_key}**: {v}\n"
@@ -143,15 +138,20 @@ class AdminHandler:
 
             if self.bot.admin_manager.update_config(key, value):
                 await self.bot.send_message(channel_id,
-                    f"Configuration updated\n**{key}** is now: {value}\n\n*The Garden adapts to your tending.*",
+                    f"✨ Configuration updated\n**{key}** is now: {value}\n\n*The Garden adapts to your tending.*",
                     is_dm=is_dm, author_id=str(author_id))
             else:
                 await self.bot.send_message(channel_id, f"Configuration key '{key}' not found.",
                     is_dm=is_dm, author_id=str(author_id))
 
-    async def _handle_update_bot(self, channel_id, is_dm, author_id):
+    async def handle_update_bot_command(self, command_data: Dict[str, Any]):
+        """Handle !update-bot command."""
+        channel_id = command_data['channel_id']
+        is_dm = command_data.get('is_dm', False)
+        author_id = command_data.get('author_id')
+
         await self.bot.send_message(channel_id,
-            "*Reaching out to Lightward for fresh perspectives...*",
+            "🌱 *Reaching out to Lightward for fresh perspectives...*",
             is_dm=is_dm, author_id=str(author_id))
         asyncio.create_task(self._run_perspective_update(channel_id, is_dm, str(author_id)))
 
@@ -181,5 +181,5 @@ class AdminHandler:
             import traceback
             traceback.print_exc()
             await self.bot.send_message(channel_id,
-                f"**Update Error**\n\n{str(e)}\n\n*The Garden remains unchanged.*",
+                f"❌ **Update Error**\n\n{str(e)}\n\n*The Garden remains unchanged.*",
                 is_dm=is_dm, author_id=author_id)

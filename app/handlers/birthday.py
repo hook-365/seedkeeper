@@ -27,7 +27,7 @@ class BirthdayHandler:
         guild_id = command_data.get('guild_id')
 
         if not args:
-            help_text = """**Birthday Commands**
+            help_text = """🎂 **Birthday Commands**
 `!birthday mine MM-DD` - Set your birthday
 `!birthday list` - Show upcoming birthdays (next 7 days)
 `!birthday list all` - Show all registered birthdays
@@ -83,12 +83,12 @@ class BirthdayHandler:
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
                 await self.bot.send_message(channel_id,
-                    f"Birthday set for {formatted}!", is_dm=is_dm, author_id=str(author_id))
+                    f"🎂 Birthday set for {formatted}!", is_dm=is_dm, author_id=str(author_id))
             else:
-                await self.bot.send_message(channel_id, f"{message}", is_dm=is_dm, author_id=str(author_id))
+                await self.bot.send_message(channel_id, f"❌ {message}", is_dm=is_dm, author_id=str(author_id))
         except ValueError:
             await self.bot.send_message(channel_id,
-                "Please use MM-DD format (e.g., 03-15 for March 15th)", is_dm=is_dm, author_id=str(author_id))
+                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)", is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_remove(self, args, author_id, channel_id, is_dm):
         if len(args) >= 2:
@@ -96,10 +96,10 @@ class BirthdayHandler:
             user_match = re.match(r'<@!?(\d+)>', user_mention)
             target_id = user_match.group(1) if user_match else str(author_id)
             success, message = self.bot.birthday_manager.remove_birthday(target_id)
-            msg = "Birthday removed!" if success else f"{message}"
+            msg = "🎂 Birthday removed!" if success else f"❌ {message}"
         else:
             success, message = self.bot.birthday_manager.remove_birthday(str(author_id))
-            msg = "Your birthday has been removed." if success else f"{message}"
+            msg = "🎂 Your birthday has been removed." if success else f"❌ {message}"
         await self.bot.send_message(channel_id, msg, is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_upcoming(self, args, author_id, channel_id, is_dm):
@@ -111,30 +111,30 @@ class BirthdayHandler:
                 days = 7
         birthdays = self.bot.birthday_manager.get_upcoming_birthdays(days)
         if birthdays:
-            text = f"**Upcoming Birthdays (next {days} days)**\n"
+            text = f"🎂 **Upcoming Birthdays (next {days} days)**\n"
             for user_id, month, day, days_until in birthdays:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
                 if days_until == 0:
-                    text += f"- <@{user_id}> - **Today!** {formatted}\n"
+                    text += f"• <@{user_id}> - **Today!** {formatted} 🎉\n"
                 elif days_until == 1:
-                    text += f"- <@{user_id}> - Tomorrow ({formatted})\n"
+                    text += f"• <@{user_id}> - Tomorrow ({formatted})\n"
                 else:
-                    text += f"- <@{user_id}> - {formatted} ({days_until} days)\n"
+                    text += f"• <@{user_id}> - {formatted} ({days_until} days)\n"
         else:
-            text = f"No upcoming birthdays in the next {days} days!"
+            text = f"No upcoming birthdays in the next {days} days! 🌱"
         await self.bot.send_message(channel_id, text, is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_parse(self, args, author_id, channel_id, is_dm):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can parse birthdays.", is_dm=is_dm, author_id=str(author_id))
+                "🚫 Only Garden Keepers can parse birthdays.", is_dm=is_dm, author_id=str(author_id))
             return
 
         text_to_parse = args[1]
         results = self.bot.birthday_manager.parse_birthday_advanced(text_to_parse)
         if results:
             self.bot._set_temp(f"birthday_parse:{author_id}", results, 300)
-            response = f"Parsed {len(results)} birthdays:\n\n"
+            response = f"📋 Parsed {len(results)} birthdays:\n\n"
             for r in results[:20]:
                 name = r.get('name', 'Unknown')
                 nick = r.get('nickname', '')
@@ -146,26 +146,26 @@ class BirthdayHandler:
             await self.bot.send_message(channel_id, response, is_dm=is_dm, author_id=str(author_id))
         else:
             await self.bot.send_message(channel_id,
-                "Could not parse any birthdays from that text.",
+                "❌ Could not parse any birthdays from that text.",
                 is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_match(self, author_id, channel_id, is_dm, guild_id):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can match birthdays.", is_dm=is_dm, author_id=str(author_id))
+                "🚫 Only Garden Keepers can match birthdays.", is_dm=is_dm, author_id=str(author_id))
             return
 
         parsed_data = self.bot._get_temp(f"birthday_parse:{author_id}")
         if not parsed_data:
             await self.bot.send_message(channel_id,
-                "No parsed birthday data found. Please run `!birthday parse` first.",
+                "❌ No parsed birthday data found. Please run `!birthday parse` first.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
         birthdays = parsed_data
         members = self.bot._get_guild_members(guild_id) if guild_id else []
 
-        response = "**Birthday Matching Assistant**\n\n"
+        response = "🔍 **Birthday Matching Assistant**\n\n"
         response += f"I found {len(birthdays)} birthdays. Attempting to match with server members...\n\n"
 
         by_month = defaultdict(list)
@@ -204,7 +204,7 @@ class BirthdayHandler:
         }
 
         if matched_count > 0:
-            response += f"**Matched {matched_count} birthdays:**\n\n"
+            response += f"✅ **Matched {matched_count} birthdays:**\n\n"
             for month in sorted(by_month.keys()):
                 has_matched = any(b.get('matched_user') for b in by_month[month])
                 if has_matched:
@@ -215,7 +215,7 @@ class BirthdayHandler:
                             response += f"- {month:02d}-{b['day']:02d} - {b['name']} -> <@{user['id']}>\n"
 
         if unmatched:
-            response += f"\n**Could not match {len(unmatched)} birthdays:**\n\n"
+            response += f"\n⚠️ **Could not match {len(unmatched)} birthdays:**\n\n"
             unmatched_by_month = defaultdict(list)
             for b in unmatched:
                 unmatched_by_month[b['month']].append(b)
@@ -243,20 +243,20 @@ class BirthdayHandler:
     async def _handle_confirm(self, author_id, channel_id, is_dm):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can confirm birthday additions.",
+                "🚫 Only Garden Keepers can confirm birthday additions.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
         matched_data = self.bot._get_temp(f"birthday_matched:{author_id}")
         if not matched_data:
             await self.bot.send_message(channel_id,
-                "No matched birthday data found. Run `!birthday parse` and `!birthday match` first.",
+                "❌ No matched birthday data found. Run `!birthday parse` and `!birthday match` first.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
         added_count = 0
         failed_count = 0
-        response = "**Adding matched birthdays...**\n\n"
+        response = "🎂 **Adding matched birthdays...**\n\n"
 
         for b in matched_data:
             if 'matched_user' in b:
@@ -268,15 +268,15 @@ class BirthdayHandler:
                 )
                 if success:
                     added_count += 1
-                    response += f"Added <@{uid}> - {month:02d}-{day:02d}\n"
+                    response += f"✅ Added <@{uid}> - {month:02d}-{day:02d}\n"
                 else:
                     failed_count += 1
-                    response += f"Failed for <@{uid}>: {message}\n"
+                    response += f"⚠️ Failed for <@{uid}>: {message}\n"
 
         response += f"\n**Summary:** Added: {added_count}"
         if failed_count > 0:
             response += f", Failed: {failed_count}"
-        response += "\n\nBirthday import complete!"
+        response += "\n\n🎉 Birthday import complete!"
 
         self.bot._del_temp(f"birthday_matched:{author_id}")
         await self.bot.send_message(channel_id, response, is_dm=is_dm, author_id=str(author_id))
@@ -284,7 +284,7 @@ class BirthdayHandler:
     async def _handle_add(self, args, author_id, channel_id, is_dm, guild_id):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can add birthdays.", is_dm=is_dm, author_id=str(author_id))
+                "🚫 Only Garden Keepers can add birthdays.", is_dm=is_dm, author_id=str(author_id))
             return
 
         username = args[1].lower()
@@ -294,12 +294,12 @@ class BirthdayHandler:
 
         target_guild_id = guild_id or '1336444334479769711'
         await self.bot.send_message(channel_id,
-            f"Searching for user '{username}'...", is_dm=is_dm, author_id=str(author_id))
+            f"🔍 Searching for user '{username}'...", is_dm=is_dm, author_id=str(author_id))
 
         members = self.bot._get_guild_members(target_guild_id)
         if not members:
             await self.bot.send_message(channel_id,
-                "Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
+                "❌ Could not fetch server members.", is_dm=is_dm, author_id=str(author_id))
             return
 
         matched_user = None
@@ -320,7 +320,7 @@ class BirthdayHandler:
 
         if not matched_user:
             await self.bot.send_message(channel_id,
-                f"Could not find user '{username}'.", is_dm=is_dm, author_id=str(author_id))
+                f"❌ Could not find user '{username}'.", is_dm=is_dm, author_id=str(author_id))
             return
 
         target_user_id = matched_user['id']
@@ -334,20 +334,20 @@ class BirthdayHandler:
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
                 await self.bot.send_message(channel_id,
-                    f"Birthday added for **{matched_user['display_name']}**: {formatted}!",
+                    f"🎂 Birthday added for **{matched_user['display_name']}**: {formatted}!",
                     is_dm=is_dm, author_id=str(author_id))
             else:
-                await self.bot.send_message(channel_id, f"{message}",
+                await self.bot.send_message(channel_id, f"❌ {message}",
                     is_dm=is_dm, author_id=str(author_id))
         except ValueError:
             await self.bot.send_message(channel_id,
-                "Please use MM-DD format (e.g., 03-15 for March 15th)",
+                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)",
                 is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_set(self, args, author_id, channel_id, is_dm):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can set others' birthdays.",
+                "🚫 Only Garden Keepers can set others' birthdays.",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
@@ -356,7 +356,7 @@ class BirthdayHandler:
         user_match = re.match(r'<@!?(\d+)>', user_mention)
         if not user_match:
             await self.bot.send_message(channel_id,
-                "Please mention a user: `!birthday set @user MM-DD`",
+                "❌ Please mention a user: `!birthday set @user MM-DD`",
                 is_dm=is_dm, author_id=str(author_id))
             return
 
@@ -370,24 +370,24 @@ class BirthdayHandler:
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
                 await self.bot.send_message(channel_id,
-                    f"Birthday set for <@{target_user_id}>: {formatted}!",
+                    f"🎂 Birthday set for <@{target_user_id}>: {formatted}!",
                     is_dm=is_dm, author_id=str(author_id))
             else:
-                await self.bot.send_message(channel_id, f"{message}",
+                await self.bot.send_message(channel_id, f"❌ {message}",
                     is_dm=is_dm, author_id=str(author_id))
         except ValueError:
             await self.bot.send_message(channel_id,
-                "Please use MM-DD format (e.g., 03-15 for March 15th)",
+                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)",
                 is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_scan(self, author_id, channel_id, is_dm):
         if not self.bot.admin_manager.is_admin(str(author_id)):
             await self.bot.send_message(channel_id,
-                "Only Garden Keepers can scan for birthdays.",
+                "🚫 Only Garden Keepers can scan for birthdays.",
                 is_dm=is_dm, author_id=str(author_id))
             return
         await self.bot.send_message(channel_id,
-            "Birthday scanning is done through the `!birthday parse` command.\n"
+            "🔍 Birthday scanning is done through the `!birthday parse` command.\n"
             "Copy birthday text and use: `!birthday parse [text]`",
             is_dm=is_dm, author_id=str(author_id))
 
@@ -402,7 +402,7 @@ class BirthdayHandler:
                         months[month] = []
                     months[month].append((user_id, data['day'], data.get('name', 'Unknown')))
 
-                text = "**All Registered Birthdays**\n"
+                text = "🎂 **All Registered Birthdays**\n"
                 text += f"*Total: {len(all_birthdays)} birthdays*\n\n"
 
                 month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -417,24 +417,24 @@ class BirthdayHandler:
                         else:
                             text += f"- <@{user_id}> - {formatted_date}\n"
 
-                text += "\nUse `!birthday list` to see only upcoming birthdays"
+                text += "\n💡 Use `!birthday list` to see only upcoming birthdays"
             else:
-                text = "No birthdays registered yet!\nUse `!birthday mine MM-DD` to add yours!"
+                text = "No birthdays registered yet! 🌱\nUse `!birthday mine MM-DD` to add yours!"
         else:
             birthdays = self.bot.birthday_manager.get_upcoming_birthdays(7)
             if birthdays:
-                text = "**Upcoming Birthdays (next 7 days)**\n"
+                text = "🎂 **Upcoming Birthdays (next 7 days)**\n"
                 for user_id, month, day, days_until in birthdays:
                     formatted = self.bot.birthday_manager.format_birthday_date(month, day)
                     if days_until == 0:
-                        text += f"- <@{user_id}> - **Today!** {formatted}\n"
+                        text += f"• <@{user_id}> - **Today!** {formatted} 🎉\n"
                     elif days_until == 1:
-                        text += f"- <@{user_id}> - Tomorrow ({formatted})\n"
+                        text += f"• <@{user_id}> - Tomorrow ({formatted})\n"
                     else:
-                        text += f"- <@{user_id}> - {formatted} ({days_until} days)\n"
-                text += "\nUse `!birthday list all` to see all birthdays"
+                        text += f"• <@{user_id}> - {formatted} ({days_until} days)\n"
+                text += "\n💡 Use `!birthday list all` to see all birthdays"
             else:
-                text = "No upcoming birthdays in the next 7 days!\n"
-                text += "Use `!birthday list all` to see all birthdays"
+                text = "No upcoming birthdays in the next 7 days! 🌱\n"
+                text += "💡 Use `!birthday list all` to see all birthdays"
 
         await self.bot.send_message(channel_id, text, is_dm=is_dm, author_id=str(author_id))

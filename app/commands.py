@@ -57,7 +57,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         aliases=["hi", "intro"],
         category="Garden Wisdom",
         handler="handle_garden_command",
-        model_tier="haiku",
+        model_tier="none",
     ),
     "about": CommandInfo(
         "about",
@@ -72,28 +72,28 @@ COMMANDS: Dict[str, CommandInfo] = {
         "Plant fresh conversation starters",
         category="Garden Wisdom",
         handler="handle_garden_command",
-        model_tier="haiku",
+        model_tier="none",
     ),
     "tend": CommandInfo(
         "tend",
         "Nurture community connections",
         category="Garden Wisdom",
         handler="handle_garden_command",
-        model_tier="haiku",
+        model_tier="none",
     ),
     "seasons": CommandInfo(
         "seasons",
         "Reflect on cycles of growth",
         category="Garden Wisdom",
         handler="handle_garden_command",
-        model_tier="haiku",
+        model_tier="none",
     ),
     "garden": CommandInfo(
         "garden",
         "View the living community garden",
         category="Garden Wisdom",
         handler="handle_garden_command",
-        model_tier="haiku",
+        model_tier="none",
     ),
 
     # ── Birthday ──
@@ -176,7 +176,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         "!config [key] [value]",
         admin_only=True,
         category="Administration",
-        handler="handle_admin_command",
+        handler="handle_config_command",
         model_tier="none",
     ),
     "status": CommandInfo(
@@ -184,7 +184,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         "Detailed admin status",
         admin_only=True,
         category="Administration",
-        handler="handle_admin_command",
+        handler="handle_status_command",
         model_tier="none",
     ),
     "reload": CommandInfo(
@@ -192,7 +192,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         "Reload data files (unavailable in single-process mode)",
         admin_only=True,
         category="Administration",
-        handler="handle_admin_command",
+        handler="handle_reload_command",
         model_tier="none",
     ),
     "update-bot": CommandInfo(
@@ -200,7 +200,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         "Refresh perspectives from Lightward",
         admin_only=True,
         category="Administration",
-        handler="handle_admin_command",
+        handler="handle_update_bot_command",
         model_tier="none",
     ),
     "cost": CommandInfo(

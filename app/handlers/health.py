@@ -16,7 +16,7 @@ class HealthHandler:
 
         perspective_count = len(self.bot._views_manager.get_all_perspectives())
 
-        health_text = f"""**Seedkeeper Health Status**
+        health_text = f"""🌱 **Seedkeeper Health Status**
 
 **System**
 - Bot: {"Online" if self.bot.is_ready() else "Offline"}

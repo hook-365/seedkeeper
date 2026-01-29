@@ -14,12 +14,6 @@ class CostHandler:
         is_dm = command_data.get('is_dm', False)
         args = command_data.get('args', '').strip().lower()
 
-        if not self.bot.admin_manager.is_admin(str(author_id)):
-            await self.bot.send_message(channel_id,
-                "This command is only available to Garden Keepers.",
-                is_dm=is_dm, author_id=str(author_id))
-            return
-
         subcommand = args.split()[0] if args else "today"
 
         sections = []

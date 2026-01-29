@@ -36,6 +36,6 @@ class CommandsListHandler:
         command = command_data.get('command', '')
 
         await self.bot.send_message(channel_id,
-            f"Unknown command: `!{command}`\n"
+            f"🌱 Unknown command: `!{command}`\n"
             f"Use `!commands` to see available commands.",
             is_dm=is_dm, author_id=author_id)
