@@ -20,7 +20,17 @@ class ConversationHandler:
 
         await self.bot.send_typing(channel_id, is_dm=True, author_id=author_id, duration=5)
 
-        # Check if there's an active feedback session
+        # Check if there's an active feedback session (auto-expire after 30 min)
+        if author_id in self.bot.feedback_manager.sessions:
+            session = self.bot.feedback_manager.sessions[author_id]
+            session_ts = session.get('timestamp', '')
+            try:
+                session_age = (datetime.utcnow() - datetime.fromisoformat(session_ts)).total_seconds()
+                if session_age > 1800:  # 30 minutes
+                    self.bot.feedback_manager.cancel_session(author_id)
+            except (ValueError, TypeError):
+                pass
+
         if author_id in self.bot.feedback_manager.sessions:
             if content.lower() in ['cancel', 'stop', 'exit', 'quit']:
                 self.bot.feedback_manager.cancel_session(author_id)

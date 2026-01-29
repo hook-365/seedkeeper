@@ -1,5 +1,6 @@
 """Birthday command handler: all birthday subcommands."""
 
+import os
 import re
 from collections import defaultdict
 from typing import Dict, Any
@@ -130,7 +131,12 @@ class BirthdayHandler:
                 "🚫 Only Garden Keepers can parse birthdays.", is_dm=is_dm, author_id=str(author_id))
             return
 
-        text_to_parse = args[1]
+        text_to_parse = args[1].strip()
+        if not text_to_parse:
+            await self.bot.send_message(channel_id,
+                "Please provide text to parse: `!birthday parse [text with names and dates]`",
+                is_dm=is_dm, author_id=str(author_id))
+            return
         results = self.bot.birthday_manager.parse_birthday_advanced(text_to_parse)
         if results:
             self.bot._set_temp(f"birthday_parse:{author_id}", results, 300)
@@ -292,7 +298,7 @@ class BirthdayHandler:
             username = username[1:]
         birthday_str = args[2]
 
-        target_guild_id = guild_id or '1336444334479769711'
+        target_guild_id = guild_id or os.getenv('DEFAULT_GUILD_ID', '1336444334479769711')
         await self.bot.send_message(channel_id,
             f"🔍 Searching for user '{username}'...", is_dm=is_dm, author_id=str(author_id))
 

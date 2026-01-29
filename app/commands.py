@@ -46,7 +46,7 @@ COMMANDS: Dict[str, CommandInfo] = {
         "Summarize missed conversations",
         "!catchup [message_link] [optional_focus]",
         category="Conversation",
-        handler="handle_catchup",
+        handler="handle_catchup_command",
         model_tier="sonnet",
     ),
 

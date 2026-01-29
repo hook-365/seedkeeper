@@ -10,7 +10,7 @@ class CatchupHandler:
     def __init__(self, bot):
         self.bot = bot
 
-    async def handle_catchup(self, command_data: Dict[str, Any]):
+    async def handle_catchup_command(self, command_data: Dict[str, Any]):
         """Handle !catchup command with message fetching."""
         args = command_data.get('args', '').strip()
         channel_id = command_data.get('channel_id')

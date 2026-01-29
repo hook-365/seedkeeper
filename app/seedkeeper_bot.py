@@ -128,6 +128,8 @@ class SeedkeeperBot(commands.Bot):
                 if method:
                     self._handler_map[cmd_name] = method
                     break
+            else:
+                print(f"[WARN] No handler found for command '{cmd_name}' (expected method: {cmd_info.handler})")
 
     # ── Temp state ───────────────────────────────────────────────
 
@@ -245,17 +247,14 @@ class SeedkeeperBot(commands.Bot):
         if (is_dm or command_data['is_mention']) and not content.startswith('!'):
             intent = self.nlp_processor.process_message(content)
             if intent and intent.confidence >= 0.7:
-                nlp_data = {
+                nlp_data = dict(command_data)
+                nlp_data.update({
+                    'type': 'command',
                     'command': intent.command,
                     'args': ' '.join(intent.args) if intent.args else '',
-                    'author_id': author_id,
-                    'channel_id': str(message.channel.id),
-                    'is_dm': is_dm,
                     'is_nlp': True,
                     'original_message': content,
-                    'guild_id': command_data['guild_id'],
-                    'channel_topic': command_data['channel_topic']
-                }
+                })
                 await self.handle_discord_command(nlp_data)
                 return
 
