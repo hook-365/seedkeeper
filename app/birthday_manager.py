@@ -149,13 +149,13 @@ class BirthdayManager:
         Get upcoming birthdays in the next N days
         Returns list of (user_id, month, day, days_until)
         """
-        today = datetime.now()
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         upcoming = []
-        
+
         for user_id, info in self.birthdays.items():
             if not info.get('confirmed', True):
                 continue
-                
+
             # Calculate days until birthday
             this_year = datetime(today.year, info['month'], info['day'])
             if this_year < today:
@@ -163,7 +163,7 @@ class BirthdayManager:
                 next_birthday = datetime(today.year + 1, info['month'], info['day'])
             else:
                 next_birthday = this_year
-            
+
             days_until = (next_birthday - today).days
             
             if 0 <= days_until <= days:

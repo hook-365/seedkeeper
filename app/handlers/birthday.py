@@ -566,7 +566,7 @@ class BirthdayHandler:
                 "1. Go to Discord Developer Portal > Your App > Bot\n"
                 "2. Enable **Server Members Intent** under Privileged Gateway Intents\n"
                 "3. Restart the bot\n\n"
-                "**Workaround:** Use `!birthday set <user_id> MM-DD` to add birthdays by ID.\n"
+                "**Workaround:** Use `!birthday set <user_id> <date>` to add birthdays by ID.\n"
                 "Example: `!birthday set 764630517197963274 01-07`"
             )
             await self.bot.send_message(channel_id, error_msg, is_dm=is_dm, author_id=str(author_id))
