@@ -10,6 +10,130 @@ from typing import Dict, Any, List, Optional, Tuple
 from zodiac import format_sign_display, get_western_zodiac, get_chinese_zodiac
 
 
+# Month name lookup for flexible date parsing
+MONTH_NAMES = {
+    'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3,
+    'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6,
+    'july': 7, 'jul': 7, 'august': 8, 'aug': 8,
+    'september': 9, 'sept': 9, 'sep': 9,
+    'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12,
+}
+
+
+def _normalize_year(y: int) -> int:
+    """Convert 2-digit year to 4-digit: 0-29 → 2000s, 30-99 → 1900s."""
+    if 0 <= y <= 29:
+        return 2000 + y
+    if 30 <= y <= 99:
+        return 1900 + y
+    return y
+
+
+def parse_date_input(date_str: str) -> Tuple[int, int, Optional[int]]:
+    """
+    Parse a flexible date string into (month, day, year|None).
+
+    Accepted formats:
+      - ISO: 1990-03-15
+      - Month name: March 15, Mar 15 1990, 15 March, 15th Mar 1990
+      - Numeric 3-part: 03/15/1990, 03-15-90, 15/03/1990
+      - Numeric 2-part: 03-15, 03/15, 3/5
+
+    For ambiguous numeric dates, if the first number > 12 it is treated as
+    DD/MM; otherwise MM/DD (US default).
+
+    Raises ValueError with a descriptive message on failure.
+    """
+    text = date_str.strip()
+    if not text:
+        raise ValueError("No date provided.")
+
+    # Strip ordinal suffixes (1st, 2nd, 3rd, 4th, ...)
+    cleaned = re.sub(r'(\d+)(?:st|nd|rd|th)\b', r'\1', text, flags=re.IGNORECASE)
+
+    month = day = year = None
+
+    # --- Pattern 1: ISO YYYY-MM-DD ---
+    m = re.fullmatch(r'(\d{4})[-/](\d{1,2})[-/](\d{1,2})', cleaned)
+    if m:
+        year = int(m.group(1))
+        month = int(m.group(2))
+        day = int(m.group(3))
+        return _validate_date(month, day, year)
+
+    # --- Pattern 2: Month name + day (± year) ---
+    # "March 15", "Mar 15 1990", "March 15, 1990"
+    m = re.fullmatch(
+        r'([a-zA-Z]+)\s+(\d{1,2})(?:\s*,?\s*(\d{2,4}))?', cleaned
+    )
+    if m and m.group(1).lower() in MONTH_NAMES:
+        month = MONTH_NAMES[m.group(1).lower()]
+        day = int(m.group(2))
+        if m.group(3):
+            year = _normalize_year(int(m.group(3)))
+        return _validate_date(month, day, year)
+
+    # "15 March", "15 Mar 1990"
+    m = re.fullmatch(
+        r'(\d{1,2})\s+([a-zA-Z]+)(?:\s+(\d{2,4}))?', cleaned
+    )
+    if m and m.group(2).lower() in MONTH_NAMES:
+        day = int(m.group(1))
+        month = MONTH_NAMES[m.group(2).lower()]
+        if m.group(3):
+            year = _normalize_year(int(m.group(3)))
+        return _validate_date(month, day, year)
+
+    # --- Pattern 3: 3-part numeric (slashes or dashes) ---
+    m = re.fullmatch(r'(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})', cleaned)
+    if m:
+        a, b, c = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        year = _normalize_year(c)
+        if a > 12:
+            # DD/MM/YYYY
+            day, month = a, b
+        else:
+            # MM/DD/YYYY (US default)
+            month, day = a, b
+        return _validate_date(month, day, year)
+
+    # --- Pattern 4: 2-part numeric ---
+    m = re.fullmatch(r'(\d{1,2})[-/](\d{1,2})', cleaned)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        if a > 12:
+            day, month = a, b
+        else:
+            month, day = a, b
+        return _validate_date(month, day, None)
+
+    raise ValueError(
+        "Could not parse date. Try formats like: `03-15`, `03/15`, `March 15`, "
+        "`Mar 15 1990`, `1990-03-15`, or `03-15-1990`."
+    )
+
+
+def _validate_date(month: int, day: int, year: Optional[int]) -> Tuple[int, int, Optional[int]]:
+    """Validate month/day/year and return the tuple or raise ValueError."""
+    if not (1 <= month <= 12):
+        raise ValueError(f"Invalid month: {month}. Must be 1-12.")
+    if not (1 <= day <= 31):
+        raise ValueError(f"Invalid day: {day}. Must be 1-31.")
+    try:
+        if year is not None:
+            datetime(year, month, day)
+        else:
+            datetime(2024, month, day)  # leap year for validation
+    except ValueError:
+        if year is not None:
+            raise ValueError(f"Invalid date: {month}/{day}/{year}.")
+        else:
+            raise ValueError(f"Invalid date: {month}/{day}.")
+    if year is not None and (year < 1900 or year > datetime.now().year):
+        raise ValueError(f"Year {year} is out of range (1900-{datetime.now().year}).")
+    return month, day, year
+
+
 def fuzzy_match_user(name: str, nickname: Optional[str], members: List[Dict]) -> Tuple[Optional[Dict], float]:
     """
     Fuzzy match a name/nickname against server members.
@@ -92,7 +216,7 @@ class BirthdayHandler:
         if not birthday_data:
             if target_id == author_id:
                 await self.bot.send_message(channel_id,
-                    "I don't have your birthday on file. Use `!birthday mine MM-DD` to set it.",
+                    "I don't have your birthday on file. Use `!birthday mine <date>` to set it (e.g., `03-15` or `March 15`).",
                     is_dm=is_dm, author_id=author_id)
             else:
                 await self.bot.send_message(channel_id,
@@ -138,19 +262,19 @@ class BirthdayHandler:
 
         if not args:
             help_text = """🎂 **Birthday Commands**
-`!birthday mine MM-DD` - Set your birthday
-`!birthday mine MM-DD-YYYY` - Set birthday with year (for Chinese zodiac)
+`!birthday mine <date>` - Set your birthday
 `!birthday year YYYY` - Add birth year to your existing birthday
 `!birthday list` - Show upcoming birthdays (next 7 days)
 `!birthday list all` - Show all registered birthdays
 `!birthday upcoming [days]` - Show next N days
-`!sign` - Show your zodiac signs"""
+`!sign` - Show your zodiac signs
+*Date formats:* `03-15`, `03/15`, `March 15`, `Mar 15 1990`, `1990-03-15`"""
 
             if self.bot.admin_manager.is_admin(str(author_id)):
                 help_text += "\n\n**Admin Commands:**"
-                help_text += "\n`!birthday set @user MM-DD` - Set birthday by mention"
-                help_text += "\n`!birthday set <user_id> MM-DD` - Set birthday by ID"
-                help_text += "\n`!birthday add username MM-DD` - Set birthday by name"
+                help_text += "\n`!birthday set @user <date>` - Set birthday by mention"
+                help_text += "\n`!birthday set <user_id> <date>` - Set birthday by ID"
+                help_text += "\n`!birthday add username <date>` - Set birthday by name"
                 help_text += "\n`!birthday remove [@user]` - Remove a birthday"
                 help_text += "\n`!birthday parse [text]` - Parse birthdays from text"
                 help_text += "\n`!birthday match` - Match parsed birthdays to users"
@@ -195,17 +319,9 @@ class BirthdayHandler:
                 "Use `!birthday` to see available commands.", is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_mine(self, args, author_id, channel_id, is_dm):
-        birthday_str = args[1]
+        birthday_str = ' '.join(args[1:])
         try:
-            parts = birthday_str.split('-')
-            if len(parts) == 2:
-                month, day = int(parts[0]), int(parts[1])
-                year = None
-            elif len(parts) == 3:
-                month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
-            else:
-                raise ValueError("Invalid format")
-
+            month, day, year = parse_date_input(birthday_str)
             success, message = self.bot.birthday_manager.set_birthday(
                 str(author_id), month, day, str(author_id), method="manual", year=year
             )
@@ -219,9 +335,9 @@ class BirthdayHandler:
                         f"🎂 Birthday set for {formatted}!", is_dm=is_dm, author_id=str(author_id))
             else:
                 await self.bot.send_message(channel_id, f"❌ {message}", is_dm=is_dm, author_id=str(author_id))
-        except ValueError:
+        except ValueError as e:
             await self.bot.send_message(channel_id,
-                "❌ Please use MM-DD or MM-DD-YYYY format (e.g., 03-15 or 03-15-1990)", is_dm=is_dm, author_id=str(author_id))
+                f"❌ {e}", is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_year(self, args, author_id, channel_id, is_dm):
         """Handle !birthday year YYYY - add birth year to existing birthday."""
@@ -292,8 +408,8 @@ class BirthdayHandler:
         announcement += "**📝 How to participate:**\n\n"
 
         announcement += "**Don't see your name?** Add your birthday:\n"
-        announcement += "`!birthday mine MM-DD` (e.g., `!birthday mine 06-15`)\n"
-        announcement += "`!birthday mine MM-DD-YYYY` to include your birth year\n\n"
+        announcement += "`!birthday mine <date>` (e.g., `!birthday mine June 15` or `!birthday mine 06-15`)\n"
+        announcement += "Include your birth year too: `!birthday mine June 15 1990`\n\n"
 
         announcement += "**Already listed but want to add your year?**\n"
         announcement += "`!birthday year YYYY` (e.g., `!birthday year 1990`)\n\n"
@@ -563,7 +679,7 @@ class BirthdayHandler:
         username = args[1].lower()
         if username.startswith('@'):
             username = username[1:]
-        birthday_str = args[2]
+        birthday_str = ' '.join(args[2:])
 
         target_guild_id = guild_id or os.getenv('DEFAULT_GUILD_ID', '1336444334479769711')
         await self.bot.send_message(channel_id,
@@ -573,7 +689,7 @@ class BirthdayHandler:
         if not members:
             error_msg = (
                 "❌ **Could not fetch server members.**\n\n"
-                "Try using `!birthday set <user_id> MM-DD` instead.\n"
+                "Try using `!birthday set <user_id> <date>` instead.\n"
                 "Example: `!birthday set 764630517197963274 01-07`"
             )
             await self.bot.send_message(channel_id, error_msg, is_dm=is_dm, author_id=str(author_id))
@@ -602,23 +718,27 @@ class BirthdayHandler:
 
         target_user_id = matched_user['id']
         try:
-            month_str, day_str = birthday_str.split('-')
-            month, day = int(month_str), int(day_str)
+            month, day, year = parse_date_input(birthday_str)
             success, message = self.bot.birthday_manager.set_birthday(
                 target_user_id, month, day, str(author_id),
-                method="admin_add", name=matched_user['display_name']
+                method="admin_add", name=matched_user['display_name'], year=year
             )
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
-                await self.bot.send_message(channel_id,
-                    f"🎂 Birthday added for **{matched_user['display_name']}**: {formatted}!",
-                    is_dm=is_dm, author_id=str(author_id))
+                if year:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday added for **{matched_user['display_name']}**: {formatted}, {year}!",
+                        is_dm=is_dm, author_id=str(author_id))
+                else:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday added for **{matched_user['display_name']}**: {formatted}!",
+                        is_dm=is_dm, author_id=str(author_id))
             else:
                 await self.bot.send_message(channel_id, f"❌ {message}",
                     is_dm=is_dm, author_id=str(author_id))
-        except ValueError:
+        except ValueError as e:
             await self.bot.send_message(channel_id,
-                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)",
+                f"❌ {e}",
                 is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_set(self, args, author_id, channel_id, is_dm):
@@ -629,7 +749,7 @@ class BirthdayHandler:
             return
 
         user_arg = args[1]
-        birthday_str = args[2]
+        birthday_str = ' '.join(args[2:])
 
         # Support both @mention and raw user ID (17-20 digit Discord snowflake)
         user_match = re.match(r'<@!?(\d+)>', user_arg)
@@ -641,27 +761,31 @@ class BirthdayHandler:
         else:
             await self.bot.send_message(channel_id,
                 "❌ Please mention a user or provide their ID:\n"
-                "`!birthday set @user MM-DD`\n"
-                "`!birthday set 764630517197963274 MM-DD`",
+                "`!birthday set @user <date>`\n"
+                "`!birthday set 764630517197963274 03-15`",
                 is_dm=is_dm, author_id=str(author_id))
             return
         try:
-            month_str, day_str = birthday_str.split('-')
-            month, day = int(month_str), int(day_str)
+            month, day, year = parse_date_input(birthday_str)
             success, message = self.bot.birthday_manager.set_birthday(
-                target_user_id, month, day, str(author_id), method="admin_set"
+                target_user_id, month, day, str(author_id), method="admin_set", year=year
             )
             if success:
                 formatted = self.bot.birthday_manager.format_birthday_date(month, day)
-                await self.bot.send_message(channel_id,
-                    f"🎂 Birthday set for <@{target_user_id}>: {formatted}!",
-                    is_dm=is_dm, author_id=str(author_id))
+                if year:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday set for <@{target_user_id}>: {formatted}, {year}!",
+                        is_dm=is_dm, author_id=str(author_id))
+                else:
+                    await self.bot.send_message(channel_id,
+                        f"🎂 Birthday set for <@{target_user_id}>: {formatted}!",
+                        is_dm=is_dm, author_id=str(author_id))
             else:
                 await self.bot.send_message(channel_id, f"❌ {message}",
                     is_dm=is_dm, author_id=str(author_id))
-        except ValueError:
+        except ValueError as e:
             await self.bot.send_message(channel_id,
-                "❌ Please use MM-DD format (e.g., 03-15 for March 15th)",
+                f"❌ {e}",
                 is_dm=is_dm, author_id=str(author_id))
 
     async def _handle_scan(self, author_id, channel_id, is_dm, args=None, guild_id=None):
@@ -824,7 +948,7 @@ class BirthdayHandler:
 
                 text += "\n💡 Use `!birthday list` to see only upcoming birthdays"
             else:
-                text = "No birthdays registered yet! 🌱\nUse `!birthday mine MM-DD` to add yours!"
+                text = "No birthdays registered yet! 🌱\nUse `!birthday mine <date>` to add yours!"
         else:
             birthdays = self.bot.birthday_manager.get_upcoming_birthdays(7)
             if birthdays:

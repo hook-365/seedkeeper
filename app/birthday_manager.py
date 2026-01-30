@@ -64,7 +64,7 @@ class BirthdayManager:
             # Use a leap year for validation (allows Feb 29)
             datetime(2024, month, day)
         except ValueError:
-            return False, "That doesn't seem to be a valid date. Please use MM-DD format."
+            return False, "That doesn't seem to be a valid date. Try formats like `03-15`, `March 15`, or `1990-03-15`."
         
         # Check if birthday already exists
         if user_id in self.birthdays:
@@ -120,7 +120,7 @@ class BirthdayManager:
     def set_year(self, user_id: str, year: int) -> Tuple[bool, str]:
         """Set/update just the birth year for an existing birthday."""
         if user_id not in self.birthdays:
-            return False, "No birthday on file. Use `!birthday mine MM-DD` first."
+            return False, "No birthday on file. Use `!birthday mine <date>` first (e.g., `03-15` or `March 15`)."
         if year < 1900 or year > datetime.now().year:
             return False, "Please enter a valid birth year (1900-present)."
         self.birthdays[user_id]['year'] = year
